@@ -8,6 +8,7 @@ import (
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients/config"
 	"github.com/elastic/terraform-provider-elasticstack/internal/elasticsearch/cluster/script"
+	"github.com/elastic/terraform-provider-elasticstack/internal/elasticsearch/connector"
 	"github.com/elastic/terraform-provider-elasticstack/internal/elasticsearch/enrich"
 	"github.com/elastic/terraform-provider-elasticstack/internal/elasticsearch/index/alias"
 	"github.com/elastic/terraform-provider-elasticstack/internal/elasticsearch/index/datastreamlifecycle"
@@ -157,6 +158,7 @@ func (p *Provider) resources(ctx context.Context) []func() resource.Resource {
 		role.NewRoleResource,
 		script.NewScriptResource,
 		maintenancewindow.NewResource,
+		connector.NewResource,
 		enrich.NewEnrichPolicyResource,
 		rolemapping.NewRoleMappingResource,
 		alias.NewAliasResource,
