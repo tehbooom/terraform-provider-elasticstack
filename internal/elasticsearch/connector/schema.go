@@ -135,6 +135,22 @@ func (r *Resource) Schema(_ context.Context, _ resource.SchemaRequest, resp *res
 					},
 				},
 			},
+			"api_key_id": schema.StringAttribute{
+				Description: "The ID of the API key used by the connector for authentication. For self-managed connectors this registers which key is associated with the connector. For native connectors (Elastic-managed) this is also used internally.",
+				Optional:    true,
+				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"api_key_secret_id": schema.StringAttribute{
+				Description: "The secret storage ID of the API key. Required for native/Elastic-managed connectors running inside Elastic Cloud.",
+				Optional:    true,
+				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
 			"status": schema.StringAttribute{
 				Description: "The current status of the connector.",
 				Computed:    true,

@@ -79,6 +79,15 @@ func (r *Resource) Create(ctx context.Context, req resource.CreateRequest, resp 
 		}
 	}
 
+	// Associate API key if provided
+	if !plan.APIKeyID.IsNull() && !plan.APIKeyID.IsUnknown() && plan.APIKeyID.ValueString() != "" {
+		resp.Diagnostics.Append(esclient.UpdateConnectorAPIKeyID(ctx, client, connectorID,
+			plan.APIKeyID.ValueString(), plan.APIKeySecretID.ValueString())...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+	}
+
 	// Read back to populate computed fields
 	exists, diags := r.readFromAPI(ctx, client, &plan)
 	resp.Diagnostics.Append(diags...)

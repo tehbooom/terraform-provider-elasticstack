@@ -91,6 +91,17 @@ func (r *Resource) Update(ctx context.Context, req resource.UpdateRequest, resp 
 		}
 	}
 
+	// Update API key association if changed
+	if !plan.APIKeyID.Equal(state.APIKeyID) || !plan.APIKeySecretID.Equal(state.APIKeySecretID) {
+		if !plan.APIKeyID.IsNull() && !plan.APIKeyID.IsUnknown() && plan.APIKeyID.ValueString() != "" {
+			resp.Diagnostics.Append(esclient.UpdateConnectorAPIKeyID(ctx, client, connectorID,
+				plan.APIKeyID.ValueString(), plan.APIKeySecretID.ValueString())...)
+			if resp.Diagnostics.HasError() {
+				return
+			}
+		}
+	}
+
 	// Read back to populate computed fields
 	exists, diags := r.readFromAPI(ctx, client, &plan)
 	resp.Diagnostics.Append(diags...)

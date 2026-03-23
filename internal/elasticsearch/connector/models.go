@@ -36,6 +36,8 @@ type tfModel struct {
 	Configuration           jsontypes.Normalized `tfsdk:"configuration"`
 	Scheduling              *tfScheduling        `tfsdk:"scheduling"`
 	Pipeline                *tfPipeline          `tfsdk:"pipeline"`
+	APIKeyID                types.String         `tfsdk:"api_key_id"`
+	APIKeySecretID          types.String         `tfsdk:"api_key_secret_id"`
 	Status                  types.String         `tfsdk:"status"`
 }
 
@@ -66,6 +68,8 @@ func (m *tfModel) populateFromAPI(api *esclient.ConnectorResponse) diag.Diagnost
 	m.IndexName = types.StringValue(api.IndexName)
 	m.ServiceType = types.StringValue(api.ServiceType)
 	m.Status = types.StringValue(api.Status)
+	m.APIKeyID = types.StringValue(api.APIKeyID)
+	m.APIKeySecretID = types.StringValue(api.APIKeySecretID)
 
 	if api.Configuration != nil {
 		configBytes, err := json.Marshal(api.Configuration)

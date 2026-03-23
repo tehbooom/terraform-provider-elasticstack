@@ -30,16 +30,18 @@ import (
 
 // ConnectorResponse is the API response for GET /_connector/{id}
 type ConnectorResponse struct {
-	ID            string                     `json:"id"`
-	Name          string                     `json:"name"`
-	Description   string                     `json:"description"`
-	IndexName     string                     `json:"index_name"`
-	ServiceType   string                     `json:"service_type"`
-	Status        string                     `json:"status"`
-	IsNative      bool                       `json:"is_native"`
-	Scheduling    *ConnectorScheduling       `json:"scheduling,omitempty"`
-	Pipeline      *ConnectorPipeline         `json:"pipeline,omitempty"`
-	Configuration map[string]json.RawMessage `json:"configuration,omitempty"`
+	ID             string                     `json:"id"`
+	Name           string                     `json:"name"`
+	Description    string                     `json:"description"`
+	IndexName      string                     `json:"index_name"`
+	ServiceType    string                     `json:"service_type"`
+	Status         string                     `json:"status"`
+	IsNative       bool                       `json:"is_native"`
+	APIKeyID       string                     `json:"api_key_id,omitempty"`
+	APIKeySecretID string                     `json:"api_key_secret_id,omitempty"`
+	Scheduling     *ConnectorScheduling       `json:"scheduling,omitempty"`
+	Pipeline       *ConnectorPipeline         `json:"pipeline,omitempty"`
+	Configuration  map[string]json.RawMessage `json:"configuration,omitempty"`
 }
 
 // ConnectorSchedule represents the schedule for a single sync type.
@@ -290,6 +292,41 @@ func UpdateConnectorName(ctx context.Context, apiClient *clients.APIClient, conn
 	defer res.Body.Close()
 
 	return diagutil.CheckErrorFromFW(res, "Failed to update connector name")
+}
+
+// UpdateConnectorAPIKeyID associates an API key with the connector.
+// apiKeySecretID is optional (only needed for native/Elastic-managed connectors).
+func UpdateConnectorAPIKeyID(ctx context.Context, apiClient *clients.APIClient, connectorID, apiKeyID, apiKeySecretID string) fwdiags.Diagnostics {
+	var diags fwdiags.Diagnostics
+
+	esClient, err := apiClient.GetESClient()
+	if err != nil {
+		diags.AddError("Failed to get Elasticsearch client", err.Error())
+		return diags
+	}
+
+	body := map[string]any{
+		"api_key_id": apiKeyID,
+	}
+	if apiKeySecretID != "" {
+		body["api_key_secret_id"] = apiKeySecretID
+	}
+	bodyBytes, err := json.Marshal(body)
+	if err != nil {
+		diags.AddError("Failed to marshal api_key_id body", err.Error())
+		return diags
+	}
+
+	res, err := esClient.ConnectorUpdateAPIKeyDocumentID(bytes.NewReader(bodyBytes), connectorID,
+		esClient.ConnectorUpdateAPIKeyDocumentID.WithContext(ctx),
+	)
+	if err != nil {
+		diags.AddError("Failed to update connector API key ID", err.Error())
+		return diags
+	}
+	defer res.Body.Close()
+
+	return diagutil.CheckErrorFromFW(res, "Failed to update connector API key ID")
 }
 
 // UpdateConnectorIndexName updates the connector index name.
