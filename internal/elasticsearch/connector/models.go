@@ -18,12 +18,15 @@
 package connector
 
 import (
+	"context"
 	"encoding/json"
 
 	esclient "github.com/elastic/terraform-provider-elasticstack/internal/clients/elasticsearch"
 	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 )
 
 type tfModel struct {
@@ -34,17 +37,18 @@ type tfModel struct {
 	IndexName               types.String         `tfsdk:"index_name"`
 	ServiceType             types.String         `tfsdk:"service_type"`
 	Configuration           jsontypes.Normalized `tfsdk:"configuration"`
-	Scheduling              *tfScheduling        `tfsdk:"scheduling"`
-	Pipeline                *tfPipeline          `tfsdk:"pipeline"`
+	Scheduling              types.Object         `tfsdk:"scheduling"`
+	Pipeline                types.Object         `tfsdk:"pipeline"`
 	APIKeyID                types.String         `tfsdk:"api_key_id"`
 	APIKeySecretID          types.String         `tfsdk:"api_key_secret_id"`
 	Status                  types.String         `tfsdk:"status"`
 }
 
+// tfScheduling is used only for As() conversions, not stored directly in tfModel.
 type tfScheduling struct {
-	Full          *tfSchedule `tfsdk:"full"`
-	Incremental   *tfSchedule `tfsdk:"incremental"`
-	AccessControl *tfSchedule `tfsdk:"access_control"`
+	Full          types.Object `tfsdk:"full"`
+	Incremental   types.Object `tfsdk:"incremental"`
+	AccessControl types.Object `tfsdk:"access_control"`
 }
 
 type tfSchedule struct {
@@ -59,7 +63,47 @@ type tfPipeline struct {
 	RunMlInference       types.Bool   `tfsdk:"run_ml_inference"`
 }
 
-func (m *tfModel) populateFromAPI(api *esclient.ConnectorResponse) diag.Diagnostics {
+var scheduleAttrTypes = map[string]attr.Type{
+	"enabled":  types.BoolType,
+	"interval": types.StringType,
+}
+
+var schedulingAttrTypes = map[string]attr.Type{
+	"full":           types.ObjectType{AttrTypes: scheduleAttrTypes},
+	"incremental":    types.ObjectType{AttrTypes: scheduleAttrTypes},
+	"access_control": types.ObjectType{AttrTypes: scheduleAttrTypes},
+}
+
+var pipelineAttrTypes = map[string]attr.Type{
+	"name":                   types.StringType,
+	"extract_binary_content": types.BoolType,
+	"reduce_whitespace":      types.BoolType,
+	"run_ml_inference":       types.BoolType,
+}
+
+// stripCompositeIDPrefix removes the "cluster_uuid/" prefix that the connector API
+// returns for api_key_id and api_key_secret_id, leaving just the raw key ID.
+func stripCompositeIDPrefix(id string) string {
+	for i := len(id) - 1; i >= 0; i-- {
+		if id[i] == '/' {
+			return id[i+1:]
+		}
+	}
+	return id
+}
+
+func scheduleToObject(s *esclient.ConnectorSchedule) types.Object {
+	if s == nil {
+		return types.ObjectNull(scheduleAttrTypes)
+	}
+	obj, _ := types.ObjectValue(scheduleAttrTypes, map[string]attr.Value{
+		"enabled":  types.BoolValue(s.Enabled),
+		"interval": types.StringValue(s.Interval),
+	})
+	return obj
+}
+
+func (m *tfModel) populateFromAPI(ctx context.Context, api *esclient.ConnectorResponse) diag.Diagnostics {
 	var diags diag.Diagnostics
 
 	m.ConnectorID = types.StringValue(api.ID)
@@ -68,8 +112,8 @@ func (m *tfModel) populateFromAPI(api *esclient.ConnectorResponse) diag.Diagnost
 	m.IndexName = types.StringValue(api.IndexName)
 	m.ServiceType = types.StringValue(api.ServiceType)
 	m.Status = types.StringValue(api.Status)
-	m.APIKeyID = types.StringValue(api.APIKeyID)
-	m.APIKeySecretID = types.StringValue(api.APIKeySecretID)
+	m.APIKeyID = types.StringValue(stripCompositeIDPrefix(api.APIKeyID))
+	m.APIKeySecretID = types.StringValue(stripCompositeIDPrefix(api.APIKeySecretID))
 
 	if api.Configuration != nil {
 		configBytes, err := json.Marshal(api.Configuration)
@@ -81,73 +125,101 @@ func (m *tfModel) populateFromAPI(api *esclient.ConnectorResponse) diag.Diagnost
 	}
 
 	if api.Scheduling != nil {
-		m.Scheduling = &tfScheduling{}
-		if api.Scheduling.Full != nil {
-			m.Scheduling.Full = &tfSchedule{
-				Enabled:  types.BoolValue(api.Scheduling.Full.Enabled),
-				Interval: types.StringValue(api.Scheduling.Full.Interval),
-			}
-		}
-		if api.Scheduling.Incremental != nil {
-			m.Scheduling.Incremental = &tfSchedule{
-				Enabled:  types.BoolValue(api.Scheduling.Incremental.Enabled),
-				Interval: types.StringValue(api.Scheduling.Incremental.Interval),
-			}
-		}
-		if api.Scheduling.AccessControl != nil {
-			m.Scheduling.AccessControl = &tfSchedule{
-				Enabled:  types.BoolValue(api.Scheduling.AccessControl.Enabled),
-				Interval: types.StringValue(api.Scheduling.AccessControl.Interval),
-			}
-		}
+		schedulingObj, d := types.ObjectValue(schedulingAttrTypes, map[string]attr.Value{
+			"full":           scheduleToObject(api.Scheduling.Full),
+			"incremental":    scheduleToObject(api.Scheduling.Incremental),
+			"access_control": scheduleToObject(api.Scheduling.AccessControl),
+		})
+		diags.Append(d...)
+		m.Scheduling = schedulingObj
+	} else {
+		m.Scheduling = types.ObjectNull(schedulingAttrTypes)
 	}
 
 	if api.Pipeline != nil {
-		m.Pipeline = &tfPipeline{
-			Name:                 types.StringValue(api.Pipeline.Name),
-			ExtractBinaryContent: types.BoolValue(api.Pipeline.ExtractBinaryContent),
-			ReduceWhitespace:     types.BoolValue(api.Pipeline.ReduceWhitespace),
-			RunMlInference:       types.BoolValue(api.Pipeline.RunMlInference),
-		}
+		pipelineObj, d := types.ObjectValue(pipelineAttrTypes, map[string]attr.Value{
+			"name":                   types.StringValue(api.Pipeline.Name),
+			"extract_binary_content": types.BoolValue(api.Pipeline.ExtractBinaryContent),
+			"reduce_whitespace":      types.BoolValue(api.Pipeline.ReduceWhitespace),
+			"run_ml_inference":       types.BoolValue(api.Pipeline.RunMlInference),
+		})
+		diags.Append(d...)
+		m.Pipeline = pipelineObj
+	} else {
+		m.Pipeline = types.ObjectNull(pipelineAttrTypes)
 	}
 
 	return diags
 }
 
-func (m *tfModel) toSchedulingAPI() *esclient.ConnectorScheduling {
-	if m.Scheduling == nil {
-		return nil
+func (m *tfModel) toSchedulingAPI(ctx context.Context) (*esclient.ConnectorScheduling, diag.Diagnostics) {
+	var diags diag.Diagnostics
+
+	if m.Scheduling.IsNull() || m.Scheduling.IsUnknown() {
+		return nil, diags
 	}
+
+	var scheduling tfScheduling
+	diags.Append(m.Scheduling.As(ctx, &scheduling, basetypes.ObjectAsOptions{})...)
+	if diags.HasError() {
+		return nil, diags
+	}
+
 	s := &esclient.ConnectorScheduling{}
-	if m.Scheduling.Full != nil {
-		s.Full = &esclient.ConnectorSchedule{
-			Enabled:  m.Scheduling.Full.Enabled.ValueBool(),
-			Interval: m.Scheduling.Full.Interval.ValueString(),
+
+	if !scheduling.Full.IsNull() && !scheduling.Full.IsUnknown() {
+		var full tfSchedule
+		diags.Append(scheduling.Full.As(ctx, &full, basetypes.ObjectAsOptions{})...)
+		if full.Interval.ValueString() != "" {
+			s.Full = &esclient.ConnectorSchedule{
+				Enabled:  full.Enabled.ValueBool(),
+				Interval: full.Interval.ValueString(),
+			}
 		}
 	}
-	if m.Scheduling.Incremental != nil {
-		s.Incremental = &esclient.ConnectorSchedule{
-			Enabled:  m.Scheduling.Incremental.Enabled.ValueBool(),
-			Interval: m.Scheduling.Incremental.Interval.ValueString(),
+
+	if !scheduling.Incremental.IsNull() && !scheduling.Incremental.IsUnknown() {
+		var incremental tfSchedule
+		diags.Append(scheduling.Incremental.As(ctx, &incremental, basetypes.ObjectAsOptions{})...)
+		if incremental.Interval.ValueString() != "" {
+			s.Incremental = &esclient.ConnectorSchedule{
+				Enabled:  incremental.Enabled.ValueBool(),
+				Interval: incremental.Interval.ValueString(),
+			}
 		}
 	}
-	if m.Scheduling.AccessControl != nil {
-		s.AccessControl = &esclient.ConnectorSchedule{
-			Enabled:  m.Scheduling.AccessControl.Enabled.ValueBool(),
-			Interval: m.Scheduling.AccessControl.Interval.ValueString(),
+
+	if !scheduling.AccessControl.IsNull() && !scheduling.AccessControl.IsUnknown() {
+		var accessControl tfSchedule
+		diags.Append(scheduling.AccessControl.As(ctx, &accessControl, basetypes.ObjectAsOptions{})...)
+		if accessControl.Interval.ValueString() != "" {
+			s.AccessControl = &esclient.ConnectorSchedule{
+				Enabled:  accessControl.Enabled.ValueBool(),
+				Interval: accessControl.Interval.ValueString(),
+			}
 		}
 	}
-	return s
+
+	return s, diags
 }
 
-func (m *tfModel) toPipelineAPI() *esclient.ConnectorPipeline {
-	if m.Pipeline == nil {
-		return nil
+func (m *tfModel) toPipelineAPI(ctx context.Context) (*esclient.ConnectorPipeline, diag.Diagnostics) {
+	var diags diag.Diagnostics
+
+	if m.Pipeline.IsNull() || m.Pipeline.IsUnknown() {
+		return nil, diags
 	}
+
+	var pipeline tfPipeline
+	diags.Append(m.Pipeline.As(ctx, &pipeline, basetypes.ObjectAsOptions{})...)
+	if diags.HasError() {
+		return nil, diags
+	}
+
 	return &esclient.ConnectorPipeline{
-		Name:                 m.Pipeline.Name.ValueString(),
-		ExtractBinaryContent: m.Pipeline.ExtractBinaryContent.ValueBool(),
-		ReduceWhitespace:     m.Pipeline.ReduceWhitespace.ValueBool(),
-		RunMlInference:       m.Pipeline.RunMlInference.ValueBool(),
-	}
+		Name:                 pipeline.Name.ValueString(),
+		ExtractBinaryContent: pipeline.ExtractBinaryContent.ValueBool(),
+		ReduceWhitespace:     pipeline.ReduceWhitespace.ValueBool(),
+		RunMlInference:       pipeline.RunMlInference.ValueBool(),
+	}, diags
 }

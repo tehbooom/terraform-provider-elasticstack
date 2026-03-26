@@ -244,7 +244,10 @@ func UpdateConnectorPipeline(ctx context.Context, apiClient *clients.APIClient, 
 		return diags
 	}
 
-	bodyBytes, err := json.Marshal(pipeline)
+	body := map[string]any{
+		"pipeline": pipeline,
+	}
+	bodyBytes, err := json.Marshal(body)
 	if err != nil {
 		diags.AddError("Failed to marshal pipeline body", err.Error())
 		return diags

@@ -35,7 +35,7 @@ func (r *Resource) readFromAPI(ctx context.Context, client *clients.APIClient, m
 		return false, diags
 	}
 
-	diags.Append(model.populateFromAPI(connector)...)
+	diags.Append(model.populateFromAPI(ctx, connector)...)
 	return true, diags
 }
 

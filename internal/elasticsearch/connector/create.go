@@ -64,16 +64,26 @@ func (r *Resource) Create(ctx context.Context, req resource.CreateRequest, resp 
 	}
 
 	// Apply scheduling if provided
-	if plan.Scheduling != nil {
-		resp.Diagnostics.Append(esclient.UpdateConnectorScheduling(ctx, client, connectorID, plan.toSchedulingAPI())...)
+	if !plan.Scheduling.IsNull() && !plan.Scheduling.IsUnknown() {
+		scheduling, diags := plan.toSchedulingAPI(ctx)
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		resp.Diagnostics.Append(esclient.UpdateConnectorScheduling(ctx, client, connectorID, scheduling)...)
 		if resp.Diagnostics.HasError() {
 			return
 		}
 	}
 
 	// Apply pipeline if provided
-	if plan.Pipeline != nil {
-		resp.Diagnostics.Append(esclient.UpdateConnectorPipeline(ctx, client, connectorID, plan.toPipelineAPI())...)
+	if !plan.Pipeline.IsNull() && !plan.Pipeline.IsUnknown() {
+		pipeline, diags := plan.toPipelineAPI(ctx)
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		resp.Diagnostics.Append(esclient.UpdateConnectorPipeline(ctx, client, connectorID, pipeline)...)
 		if resp.Diagnostics.HasError() {
 			return
 		}

@@ -72,9 +72,14 @@ func (r *Resource) Update(ctx context.Context, req resource.UpdateRequest, resp 
 	}
 
 	// Update scheduling if changed
-	if schedulingChanged(plan.Scheduling, state.Scheduling) {
-		if plan.Scheduling != nil {
-			resp.Diagnostics.Append(esclient.UpdateConnectorScheduling(ctx, client, connectorID, plan.toSchedulingAPI())...)
+	if !plan.Scheduling.Equal(state.Scheduling) {
+		if !plan.Scheduling.IsNull() && !plan.Scheduling.IsUnknown() {
+			scheduling, diags := plan.toSchedulingAPI(ctx)
+			resp.Diagnostics.Append(diags...)
+			if resp.Diagnostics.HasError() {
+				return
+			}
+			resp.Diagnostics.Append(esclient.UpdateConnectorScheduling(ctx, client, connectorID, scheduling)...)
 			if resp.Diagnostics.HasError() {
 				return
 			}
@@ -82,9 +87,14 @@ func (r *Resource) Update(ctx context.Context, req resource.UpdateRequest, resp 
 	}
 
 	// Update pipeline if changed
-	if pipelineChanged(plan.Pipeline, state.Pipeline) {
-		if plan.Pipeline != nil {
-			resp.Diagnostics.Append(esclient.UpdateConnectorPipeline(ctx, client, connectorID, plan.toPipelineAPI())...)
+	if !plan.Pipeline.Equal(state.Pipeline) {
+		if !plan.Pipeline.IsNull() && !plan.Pipeline.IsUnknown() {
+			pipeline, diags := plan.toPipelineAPI(ctx)
+			resp.Diagnostics.Append(diags...)
+			if resp.Diagnostics.HasError() {
+				return
+			}
+			resp.Diagnostics.Append(esclient.UpdateConnectorPipeline(ctx, client, connectorID, pipeline)...)
 			if resp.Diagnostics.HasError() {
 				return
 			}
@@ -116,37 +126,3 @@ func (r *Resource) Update(ctx context.Context, req resource.UpdateRequest, resp 
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
-func schedulingChanged(plan, state *tfScheduling) bool {
-	if plan == nil && state == nil {
-		return false
-	}
-	if plan == nil || state == nil {
-		return true
-	}
-	return scheduleChanged(plan.Full, state.Full) ||
-		scheduleChanged(plan.Incremental, state.Incremental) ||
-		scheduleChanged(plan.AccessControl, state.AccessControl)
-}
-
-func scheduleChanged(plan, state *tfSchedule) bool {
-	if plan == nil && state == nil {
-		return false
-	}
-	if plan == nil || state == nil {
-		return true
-	}
-	return !plan.Enabled.Equal(state.Enabled) || !plan.Interval.Equal(state.Interval)
-}
-
-func pipelineChanged(plan, state *tfPipeline) bool {
-	if plan == nil && state == nil {
-		return false
-	}
-	if plan == nil || state == nil {
-		return true
-	}
-	return !plan.Name.Equal(state.Name) ||
-		!plan.ExtractBinaryContent.Equal(state.ExtractBinaryContent) ||
-		!plan.ReduceWhitespace.Equal(state.ReduceWhitespace) ||
-		!plan.RunMlInference.Equal(state.RunMlInference)
-}

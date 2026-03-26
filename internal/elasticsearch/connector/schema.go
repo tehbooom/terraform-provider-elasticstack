@@ -24,6 +24,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 
@@ -32,7 +33,7 @@ import (
 
 func (r *Resource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Manages an Elasticsearch search connector. See https://www.elastic.co/docs/api/doc/elasticsearch/group/endpoint-connector",
+		Description: "Manages an Elasticsearch search connector. See https://www.elastic.co/docs/reference/search-connectors",
 		Blocks: map[string]schema.Block{
 			"elasticsearch_connection": providerschema.GetEsFWConnectionBlock(false),
 		},
@@ -75,7 +76,7 @@ func (r *Resource) Schema(_ context.Context, _ resource.SchemaRequest, resp *res
 			},
 			"configuration": schema.StringAttribute{
 				CustomType:  jsontypes.NormalizedType{},
-				Description: "Connector configuration as a JSON object. The schema varies by service type. The full configuration object including metadata fields (display, label, type, etc.) should be provided.",
+				Description: "Connector configuration as a JSON object mapping field names to `{\"value\": ...}` objects. The available fields are defined by the connector's `get_default_configuration()` method — find your service type under `connectors/sources/<service_type>/datasource.py` in the elastic/connectors repository (https://github.com/elastic/connectors).",
 				Optional:    true,
 				Computed:    true,
 				Sensitive:   true,
@@ -84,24 +85,36 @@ func (r *Resource) Schema(_ context.Context, _ resource.SchemaRequest, resp *res
 				Description: "Sync scheduling configuration.",
 				Optional:    true,
 				Computed:    true,
+				PlanModifiers: []planmodifier.Object{
+					objectplanmodifier.UseStateForUnknown(),
+				},
 				Attributes: map[string]schema.Attribute{
 					"full": schema.SingleNestedAttribute{
 						Description: "Full sync schedule.",
 						Optional:    true,
 						Computed:    true,
-						Attributes:  scheduleAttributes(),
+						PlanModifiers: []planmodifier.Object{
+							objectplanmodifier.UseStateForUnknown(),
+						},
+						Attributes: scheduleAttributes(),
 					},
 					"incremental": schema.SingleNestedAttribute{
 						Description: "Incremental sync schedule.",
 						Optional:    true,
 						Computed:    true,
-						Attributes:  scheduleAttributes(),
+						PlanModifiers: []planmodifier.Object{
+							objectplanmodifier.UseStateForUnknown(),
+						},
+						Attributes: scheduleAttributes(),
 					},
 					"access_control": schema.SingleNestedAttribute{
 						Description: "Access control sync schedule.",
 						Optional:    true,
 						Computed:    true,
-						Attributes:  scheduleAttributes(),
+						PlanModifiers: []planmodifier.Object{
+							objectplanmodifier.UseStateForUnknown(),
+						},
+						Attributes: scheduleAttributes(),
 					},
 				},
 			},
@@ -109,6 +122,9 @@ func (r *Resource) Schema(_ context.Context, _ resource.SchemaRequest, resp *res
 				Description: "Ingest pipeline configuration.",
 				Optional:    true,
 				Computed:    true,
+				PlanModifiers: []planmodifier.Object{
+					objectplanmodifier.UseStateForUnknown(),
+				},
 				Attributes: map[string]schema.Attribute{
 					"name": schema.StringAttribute{
 						Description: "The name of the ingest pipeline.",
