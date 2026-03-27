@@ -24,11 +24,17 @@ import (
 
 // dataSourceModel maps the data source schema data.
 type dataSourceModel struct {
-	ID                  types.String `tfsdk:"id"`
-	SpaceID             types.String `tfsdk:"space_id"`
-	IncludeDependencies types.Bool   `tfsdk:"include_dependencies"`
-	Agent               types.String `tfsdk:"agent"`
-	Tools               []toolModel  `tfsdk:"tools"`
+	ID                  types.String    `tfsdk:"id"`
+	SpaceID             types.String    `tfsdk:"space_id"`
+	IncludeDependencies types.Bool      `tfsdk:"include_dependencies"`
+	Agent               types.String    `tfsdk:"agent"`
+	Tools               []toolModel     `tfsdk:"tools"`
+	Workflows           []workflowModel `tfsdk:"workflows"`
+}
+
+type workflowModel struct {
+	ID   types.String                    `tfsdk:"id"`
+	Yaml customtypes.NormalizedYamlValue `tfsdk:"yaml"`
 }
 
 type toolModel struct {

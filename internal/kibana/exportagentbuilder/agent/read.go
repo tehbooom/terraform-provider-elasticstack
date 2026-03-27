@@ -92,6 +92,7 @@ func (d *DataSource) Read(ctx context.Context, req datasource.ReadRequest, resp 
 	state.Agent = types.StringValue(string(agentJSON))
 	state.IncludeDependencies = config.IncludeDependencies
 	state.Tools = []toolModel{}
+	state.Workflows = []workflowModel{}
 
 	includeDeps := typeutils.IsKnown(config.IncludeDependencies) && config.IncludeDependencies.ValueBool()
 
@@ -105,7 +106,8 @@ func (d *DataSource) Read(ctx context.Context, req datasource.ReadRequest, resp 
 		}
 
 		// Fetch each tool and track workflow IDs for workflow-type tools.
-		workflowIDSet := make(map[string]struct{})
+		// These are "tool-embedded" workflows whose YAML is surfaced on the tool itself.
+		toolWorkflowIDSet := make(map[string]struct{})
 		toolsByID := make(map[string]*models.Tool)
 
 		for toolID := range toolIDSet {
@@ -121,14 +123,14 @@ func (d *DataSource) Read(ctx context.Context, req datasource.ReadRequest, resp 
 
 			if tool.Type == "workflow" {
 				if workflowID, ok := tool.Configuration["workflow_id"].(string); ok && workflowID != "" {
-					workflowIDSet[workflowID] = struct{}{}
+					toolWorkflowIDSet[workflowID] = struct{}{}
 				}
 			}
 		}
 
-		// Fetch each referenced workflow.
+		// Fetch workflows referenced by tools (for embedding YAML into the tool model).
 		workflowsByID := make(map[string]*models.Workflow)
-		for workflowID := range workflowIDSet {
+		for workflowID := range toolWorkflowIDSet {
 			workflow, wDiags := kibanaoapi.GetWorkflow(ctx, oapiClient, spaceID, workflowID)
 			resp.Diagnostics.Append(wDiags...)
 			if resp.Diagnostics.HasError() {
@@ -139,7 +141,7 @@ func (d *DataSource) Read(ctx context.Context, req datasource.ReadRequest, resp 
 			}
 		}
 
-		// Convert to state models.
+		// Convert tools to state models.
 		for _, tool := range toolsByID {
 			tm, tmDiags := toolModelFromAPI(ctx, tool, workflowsByID)
 			resp.Diagnostics.Append(tmDiags...)
@@ -147,6 +149,30 @@ func (d *DataSource) Read(ctx context.Context, req datasource.ReadRequest, resp 
 				return
 			}
 			state.Tools = append(state.Tools, tm)
+		}
+
+		// Collect standalone workflow IDs from the agent configuration (workflow_ids).
+		// These are not associated with a tool and are exported separately.
+		standaloneWorkflowIDSet := make(map[string]struct{})
+		for _, id := range agent.Configuration.WorkflowIDs {
+			// Only fetch if not already fetched as a tool-embedded workflow.
+			if _, alreadyFetched := workflowsByID[id]; !alreadyFetched {
+				standaloneWorkflowIDSet[id] = struct{}{}
+			}
+		}
+
+		for workflowID := range standaloneWorkflowIDSet {
+			workflow, wDiags := kibanaoapi.GetWorkflow(ctx, oapiClient, spaceID, workflowID)
+			resp.Diagnostics.Append(wDiags...)
+			if resp.Diagnostics.HasError() {
+				return
+			}
+			if workflow != nil {
+				state.Workflows = append(state.Workflows, workflowModel{
+					ID:   types.StringValue(workflow.ID),
+					Yaml: customtypes.NewNormalizedYamlValue(workflow.Yaml),
+				})
+			}
 		}
 	}
 

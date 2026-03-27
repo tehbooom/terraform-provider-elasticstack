@@ -19,7 +19,8 @@ data "elasticstack_kibana_agentbuilder_export_agent" "this" {
 
 output "agent" {
   value = jsonencode({
-    agent = data.elasticstack_kibana_agentbuilder_export_agent.this.agent
-    tools = data.elasticstack_kibana_agentbuilder_export_agent.this.tools
+    agent     = data.elasticstack_kibana_agentbuilder_export_agent.this.agent
+    tools     = data.elasticstack_kibana_agentbuilder_export_agent.this.tools
+    workflows = data.elasticstack_kibana_agentbuilder_export_agent.this.workflows
   })
 }

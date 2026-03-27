@@ -7,6 +7,8 @@
 #
 # Resource ordering:
 #   1. Workflows are created first (no dependencies).
+#      This covers both tool-embedded workflows and standalone workflows
+#      referenced by the agent's workflow_ids.
 #   2. Tools are created next. Workflow-type tools reference the new
 #      workflow ID via interpolation, so Terraform resolves the
 #      dependency automatically.
@@ -41,14 +43,20 @@ locals {
   # so we only create the writable ones.
   tools = [for t in local.exported.tools : t if !t.readonly]
 
-  # Collect unique workflows referenced by workflow-type tools.
-  workflows = distinct(flatten([
-    for t in local.tools : (
-      t.type == "workflow" && t.workflow_id != null
-      ? [{ id = t.workflow_id, yaml = t.workflow_configuration_yaml }]
-      : []
-    )
-  ]))
+  # Workflows come from two sources:
+  #   - tool-embedded: extracted from workflow-type tools (yaml is on the tool)
+  #   - standalone: exported separately via the agent's workflow_ids field
+  # Merge both, deduplicating by ID.
+  tool_workflows = [
+    for t in local.tools : { id = t.workflow_id, yaml = t.workflow_configuration_yaml }
+    if t.type == "workflow" && t.workflow_id != null
+  ]
+  standalone_workflows = local.exported.workflows
+
+  all_workflows = {
+    for w in concat(local.tool_workflows, local.standalone_workflows) : w.id => w...
+  }
+  workflows = [for id, versions in local.all_workflows : versions[0]]
 
   # Map each old workflow ID to its index so we can look up the new resource.
   old_workflow_id_to_index = {
@@ -69,6 +77,14 @@ locals {
       : t.configuration
     )
   ]
+
+  # Remap old standalone workflow IDs to new ones for the agent's workflow_ids.
+  new_workflow_ids = try([
+    for old_id in local.agent.configuration.workflow_ids :
+    elasticstack_kibana_agentbuilder_workflow.workflows[
+      local.old_workflow_id_to_index[old_id]
+    ].workflow_id
+  ], null)
 }
 
 # 1. Create workflows
@@ -104,7 +120,7 @@ resource "elasticstack_kibana_agentbuilder_agent" "agent" {
   enable_elastic_capabilities = try(local.agent.configuration.enable_elastic_capabilities, null)
   plugin_ids                  = try(local.agent.configuration.plugin_ids, null)
   skill_ids                   = try(local.agent.configuration.skill_ids, null)
-  workflow_ids                = try(local.agent.configuration.workflow_ids, null)
+  workflow_ids                = local.new_workflow_ids
 
   tools = try(
     flatten([for t in local.agent.configuration.tools : t.tool_ids]),

@@ -90,6 +90,23 @@ func (d *DataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp 
 					},
 				},
 			},
+			"workflows": schema.ListNestedAttribute{
+				Description: "List of exported standalone workflows (only populated when include_dependencies is true).",
+				Computed:    true,
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"id": schema.StringAttribute{
+							Description: "The workflow ID.",
+							Computed:    true,
+						},
+						"yaml": schema.StringAttribute{
+							Description: "The workflow definition in YAML format.",
+							Computed:    true,
+							CustomType:  customtypes.NormalizedYamlType{},
+						},
+					},
+				},
+			},
 		},
 	}
 }
