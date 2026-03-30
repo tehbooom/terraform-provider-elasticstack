@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients/kibanaoapi"
 	"github.com/elastic/terraform-provider-elasticstack/internal/diagutil"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -35,15 +36,20 @@ func (r *AgentResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		return
 	}
 
-	serverVersion, sdkDiags := r.client.ServerVersion(ctx)
+	supported, sdkDiags := r.client.EnforceMinVersion(ctx, minKibanaAgentBuilderAPIVersion)
 	resp.Diagnostics.Append(diagutil.FrameworkDiagsFromSDK(sdkDiags)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
-	if serverVersion.LessThan(minKibanaAgentBuilderAPIVersion) {
+	if !supported {
 		resp.Diagnostics.AddError("Unsupported server version",
 			fmt.Sprintf("Agent Builder agents require Elastic Stack v%s or later.", minKibanaAgentBuilderAPIVersion))
+		return
+	}
+
+	compID, idDiags := clients.CompositeIDFromStrFw(stateModel.ID.ValueString())
+	resp.Diagnostics.Append(idDiags...)
+	if resp.Diagnostics.HasError() {
 		return
 	}
 
@@ -53,8 +59,7 @@ func (r *AgentResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		return
 	}
 
-	agentID := stateModel.ID.ValueString()
-	agent, diags := kibanaoapi.GetAgent(ctx, client, stateModel.spaceID(), agentID)
+	agent, diags := kibanaoapi.GetAgent(ctx, client, compID.ClusterID, compID.ResourceID)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -65,7 +70,7 @@ func (r *AgentResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		return
 	}
 
-	diags = stateModel.populateFromAPI(ctx, agent)
+	diags = stateModel.populateFromAPI(ctx, compID.ClusterID, agent)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return

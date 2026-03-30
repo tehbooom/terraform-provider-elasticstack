@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients/kibanaoapi"
 	"github.com/elastic/terraform-provider-elasticstack/internal/diagutil"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -35,15 +36,20 @@ func (r *AgentResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		return
 	}
 
-	serverVersion, sdkDiags := r.client.ServerVersion(ctx)
+	supported, sdkDiags := r.client.EnforceMinVersion(ctx, minKibanaAgentBuilderAPIVersion)
 	resp.Diagnostics.Append(diagutil.FrameworkDiagsFromSDK(sdkDiags)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
-	if serverVersion.LessThan(minKibanaAgentBuilderAPIVersion) {
+	if !supported {
 		resp.Diagnostics.AddError("Unsupported server version",
 			fmt.Sprintf("Agent Builder agents require Elastic Stack v%s or later.", minKibanaAgentBuilderAPIVersion))
+		return
+	}
+
+	compID, idDiags := clients.CompositeIDFromStrFw(planModel.ID.ValueString())
+	resp.Diagnostics.Append(idDiags...)
+	if resp.Diagnostics.HasError() {
 		return
 	}
 
@@ -53,26 +59,25 @@ func (r *AgentResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		return
 	}
 
-	body, diags := planModel.toAPIUpdateModel(ctx, serverVersion)
+	body, diags := planModel.toAPIUpdateModel(ctx)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	agentID := planModel.ID.ValueString()
-	_, diags = kibanaoapi.UpdateAgent(ctx, client, planModel.spaceID(), agentID, body)
+	_, diags = kibanaoapi.UpdateAgent(ctx, client, compID.ClusterID, compID.ResourceID, body)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	agent, diags := kibanaoapi.GetAgent(ctx, client, planModel.spaceID(), agentID)
+	agent, diags := kibanaoapi.GetAgent(ctx, client, compID.ClusterID, compID.ResourceID)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	diags = planModel.populateFromAPI(ctx, agent)
+	diags = planModel.populateFromAPI(ctx, compID.ClusterID, agent)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return

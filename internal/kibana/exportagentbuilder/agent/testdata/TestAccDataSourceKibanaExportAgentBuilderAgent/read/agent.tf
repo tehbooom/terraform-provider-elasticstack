@@ -15,6 +15,6 @@ resource "elasticstack_kibana_agentbuilder_agent" "test" {
 }
 
 data "elasticstack_kibana_agentbuilder_export_agent" "test" {
-  id                   = elasticstack_kibana_agentbuilder_agent.test.id
+  id                   = elasticstack_kibana_agentbuilder_agent.test.agent_id
   include_dependencies = false
 }

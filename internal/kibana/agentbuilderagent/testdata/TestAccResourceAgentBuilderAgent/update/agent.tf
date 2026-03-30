@@ -8,7 +8,7 @@ provider "elasticstack" {
 }
 
 resource "elasticstack_kibana_agentbuilder_agent" "test" {
-  id           = var.agent_id
+  agent_id     = var.agent_id
   name         = "Updated Test Agent"
   description  = "An updated test agent"
   labels       = ["test", "agent", "updated"]

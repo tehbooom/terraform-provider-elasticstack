@@ -15,7 +15,7 @@ Export an Agent Builder agent by ID, optionally including its tools and workflow
 ### Export only the agent
 
 ```terraform
-# Export an agent and all its dependencies (tools + workflows) from a cluster.
+# Export an agent and all its dependencies (tools) from a cluster.
 #
 # The single "agent" output captures everything needed to recreate the
 # agent in another cluster via the import configuration.
@@ -50,10 +50,11 @@ output "agent" {
 # Prerequisites:
 #   Run `terraform apply` in the export directory first. This config
 #   reads the single "agent" output from that state to recreate the
-#   full agent with its tools and workflows.
+#   full agent with its tools and their embedded workflows.
 #
 # Resource ordering:
 #   1. Workflows are created first (no dependencies).
+#      These are tool-embedded workflows extracted from workflow-type tools.
 #   2. Tools are created next. Workflow-type tools reference the new
 #      workflow ID via interpolation, so Terraform resolves the
 #      dependency automatically.
@@ -88,14 +89,11 @@ locals {
   # so we only create the writable ones.
   tools = [for t in local.exported.tools : t if !t.readonly]
 
-  # Collect unique workflows referenced by workflow-type tools.
-  workflows = distinct(flatten([
-    for t in local.tools : (
-      t.type == "workflow" && t.workflow_id != null
-      ? [{ id = t.workflow_id, yaml = t.workflow_configuration_yaml }]
-      : []
-    )
-  ]))
+  # Workflows are extracted from workflow-type tools (yaml is on the tool).
+  workflows = [
+    for t in local.tools : { id = t.workflow_id, yaml = t.workflow_configuration_yaml }
+    if t.type == "workflow" && t.workflow_id != null
+  ]
 
   # Map each old workflow ID to its index so we can look up the new resource.
   old_workflow_id_to_index = {
@@ -140,18 +138,13 @@ resource "elasticstack_kibana_agentbuilder_tool" "tools" {
 # 3. Create agent
 
 resource "elasticstack_kibana_agentbuilder_agent" "agent" {
-  id            = local.agent.id
+  agent_id      = local.agent.id
   name          = local.agent.name
   description   = try(local.agent.description, null)
   avatar_color  = try(local.agent.avatar_color, null)
   avatar_symbol = try(local.agent.avatar_symbol, null)
   labels        = try(local.agent.labels, null)
   instructions  = try(local.agent.configuration.instructions, null)
-
-  enable_elastic_capabilities = try(local.agent.configuration.enable_elastic_capabilities, null)
-  plugin_ids                  = try(local.agent.configuration.plugin_ids, null)
-  skill_ids                   = try(local.agent.configuration.skill_ids, null)
-  workflow_ids                = try(local.agent.configuration.workflow_ids, null)
 
   tools = try(
     flatten([for t in local.agent.configuration.tools : t.tool_ids]),
@@ -190,5 +183,5 @@ Read-Only:
 - `readonly` (Boolean) Whether the tool is read-only.
 - `tags` (List of String) Tags for categorizing and organizing tools.
 - `type` (String) The type of the tool (esql, index_search, workflow, mcp).
-- `workflow_configuration_yaml` (String) The YAML configuration of the referenced workflow. Only populated when `include_workflow` is true.
-- `workflow_id` (String) The ID of the referenced workflow. Only populated when `include_workflow` is true.
+- `workflow_configuration_yaml` (String) The YAML configuration of the referenced workflow. Only populated for workflow-type tools. Requires Elastic Stack v9.4.0 or later.
+- `workflow_id` (String) The ID of the referenced workflow. Only populated for workflow-type tools. Requires Elastic Stack v9.4.0 or later.

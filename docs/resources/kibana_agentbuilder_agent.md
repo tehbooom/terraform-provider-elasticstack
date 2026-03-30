@@ -17,9 +17,9 @@ provider "elasticstack" {
   kibana {}
 }
 
-# Basic agent
+# Basic agent with tools
 resource "elasticstack_kibana_agentbuilder_agent" "my_agent" {
-  id            = "my-agent"
+  agent_id      = "my-agent"
   name          = "My Agent"
   description   = "An example agent built with Agent Builder."
   avatar_color  = "#BFDBFF"
@@ -32,36 +32,6 @@ resource "elasticstack_kibana_agentbuilder_agent" "my_agent" {
   ]
 }
 
-# Agent with all configuration options
-resource "elasticstack_kibana_agentbuilder_workflow" "pre_exec" {
-  configuration_yaml = <<-EOT
-name: Pre-execution Workflow
-description: Runs before every agent execution
-enabled: true
-triggers:
-  - type: manual
-inputs: []
-steps:
-  - name: setup
-    type: console
-    with:
-      message: "Preparing agent context"
-EOT
-}
-
-resource "elasticstack_kibana_agentbuilder_agent" "full_agent" {
-  id           = "full-agent"
-  name         = "Full-Featured Agent"
-  description  = "Agent demonstrating all available configuration options."
-  instructions = "You are a capable assistant with access to Elastic capabilities."
-
-  enable_elastic_capabilities = true
-  plugin_ids                  = ["plugin-a", "plugin-b"]
-  skill_ids                   = ["skill-x"]
-  workflow_ids                = [elasticstack_kibana_agentbuilder_workflow.pre_exec.workflow_id]
-  labels                      = ["production"]
-}
-
 # Agent in a non-default space
 resource "elasticstack_kibana_space" "my_space" {
   space_id = "my-space"
@@ -69,7 +39,7 @@ resource "elasticstack_kibana_space" "my_space" {
 }
 
 resource "elasticstack_kibana_agentbuilder_agent" "space_agent" {
-  id       = "space-agent"
+  agent_id = "space-agent"
   space_id = elasticstack_kibana_space.my_space.space_id
   name     = "Space-Scoped Agent"
 }
@@ -80,7 +50,7 @@ resource "elasticstack_kibana_agentbuilder_agent" "space_agent" {
 
 ### Required
 
-- `id` (String) The agent ID.
+- `agent_id` (String) The agent ID.
 - `name` (String) The agent name.
 
 ### Optional
@@ -88,14 +58,14 @@ resource "elasticstack_kibana_agentbuilder_agent" "space_agent" {
 - `avatar_color` (String) Hex color code for the agent avatar (e.g., `#BFDBFF`).
 - `avatar_symbol` (String) Symbol or initials for the agent avatar (e.g., `SI`).
 - `description` (String) The agent description.
-- `enable_elastic_capabilities` (Boolean) When true, enables built-in Elastic capabilities for the agent.
 - `instructions` (String) Optional system instructions that define the agent behavior.
 - `labels` (List of String) List of labels for the agent.
-- `plugin_ids` (List of String) Array of plugin IDs to assign to the agent. Maximum 100 elements.
-- `skill_ids` (List of String) Array of skill IDs to be available to the agent. Maximum 100 elements.
 - `space_id` (String) An identifier for the space. If not provided, the default space is used.
 - `tools` (List of String) List of tool IDs that the agent can use.
-- `workflow_ids` (List of String) Optional list of workflow IDs. When set, these workflows run before every agent execution, in order. Maximum 100 elements.
+
+### Read-Only
+
+- `id` (String) The composite ID of the agent: `<space_id>/<agent_id>`.
 
 ## Import
 

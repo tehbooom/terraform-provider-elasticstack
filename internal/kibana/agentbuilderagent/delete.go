@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients/kibanaoapi"
 	"github.com/elastic/terraform-provider-elasticstack/internal/diagutil"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -35,15 +36,20 @@ func (r *AgentResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 		return
 	}
 
-	serverVersion, sdkDiags := r.client.ServerVersion(ctx)
+	supported, sdkDiags := r.client.EnforceMinVersion(ctx, minKibanaAgentBuilderAPIVersion)
 	resp.Diagnostics.Append(diagutil.FrameworkDiagsFromSDK(sdkDiags)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
-	if serverVersion.LessThan(minKibanaAgentBuilderAPIVersion) {
+	if !supported {
 		resp.Diagnostics.AddError("Unsupported server version",
 			fmt.Sprintf("Agent Builder agents require Elastic Stack v%s or later.", minKibanaAgentBuilderAPIVersion))
+		return
+	}
+
+	compID, idDiags := clients.CompositeIDFromStrFw(stateModel.ID.ValueString())
+	resp.Diagnostics.Append(idDiags...)
+	if resp.Diagnostics.HasError() {
 		return
 	}
 
@@ -53,7 +59,6 @@ func (r *AgentResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 		return
 	}
 
-	agentID := stateModel.ID.ValueString()
-	diags = kibanaoapi.DeleteAgent(ctx, client, stateModel.spaceID(), agentID)
+	diags = kibanaoapi.DeleteAgent(ctx, client, compID.ClusterID, compID.ResourceID)
 	resp.Diagnostics.Append(diags...)
 }

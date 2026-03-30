@@ -35,6 +35,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 )
 
+const (
+	dataSourceID = "data.elasticstack_kibana_agentbuilder_export_agent.test"
+)
+
 var (
 	minKibanaAgentBuilderAPIVersion = version.Must(version.NewVersion("9.3.0"))
 )
@@ -89,8 +93,8 @@ func preCheckWithWorkflowsEnabled(t *testing.T) {
 	}
 }
 
-// TestAccDataSourceKibanaExportABAgent tests exporting an agent without dependencies.
-func TestAccDataSourceKibanaExportABAgent(t *testing.T) {
+// TestAccDataSourceKibanaExportAgentBuilderAgent tests exporting an agent without dependencies.
+func TestAccDataSourceKibanaExportAgentBuilderAgent(t *testing.T) {
 	agentID := "test-agent-" + uuid.New().String()[:8]
 
 	resource.Test(t, resource.TestCase{
@@ -104,19 +108,19 @@ func TestAccDataSourceKibanaExportABAgent(t *testing.T) {
 					"agent_id": config.StringVariable(agentID),
 				},
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttrSet("data.elasticstack_kibana_agentbuilder_export_agent.test", "id"),
-					resource.TestCheckResourceAttrSet("data.elasticstack_kibana_agentbuilder_export_agent.test", "agent"),
-					resource.TestCheckResourceAttr("data.elasticstack_kibana_agentbuilder_export_agent.test", "include_dependencies", "false"),
-					resource.TestCheckResourceAttr("data.elasticstack_kibana_agentbuilder_export_agent.test", "tools.#", "0"),
-					resource.TestCheckResourceAttr("data.elasticstack_kibana_agentbuilder_export_agent.test", "workflows.#", "0"),
+					resource.TestCheckResourceAttrSet(dataSourceID, "id"),
+					resource.TestCheckResourceAttrSet(dataSourceID, "agent"),
+					resource.TestCheckResourceAttr(dataSourceID, "include_dependencies", "false"),
+					resource.TestCheckResourceAttr(dataSourceID, "tools.#", "0"),
 				),
 			},
 		},
 	})
 }
 
-// TestAccDataSourceKibanaExportABAgentWithDependencies tests exporting an agent with its tools and workflows.
-func TestAccDataSourceKibanaExportABAgentWithDependencies(t *testing.T) {
+// TestAccDataSourceKibanaExportAgentBuilderAgentWithDependencies tests exporting an agent with
+// multiple tools (esql + workflow). Verifies tool count only since ordering is non-deterministic.
+func TestAccDataSourceKibanaExportAgentBuilderAgentWithDependencies(t *testing.T) {
 	agentID := "test-agent-deps-" + uuid.New().String()[:8]
 	esqlToolID := "test-esql-tool-" + uuid.New().String()[:8]
 	workflowToolID := "test-wf-tool-" + uuid.New().String()[:8]
@@ -129,29 +133,26 @@ func TestAccDataSourceKibanaExportABAgentWithDependencies(t *testing.T) {
 				ProtoV6ProviderFactories: acctest.Providers,
 				ConfigDirectory:          acctest.NamedTestCaseDirectory("read_with_deps"),
 				ConfigVariables: config.Variables{
-					"agent_id":        config.StringVariable(agentID),
-					"esql_tool_id":    config.StringVariable(esqlToolID),
+					"agent_id":         config.StringVariable(agentID),
+					"esql_tool_id":     config.StringVariable(esqlToolID),
 					"workflow_tool_id": config.StringVariable(workflowToolID),
 				},
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttrSet("data.elasticstack_kibana_agentbuilder_export_agent.test", "id"),
-					resource.TestCheckResourceAttrSet("data.elasticstack_kibana_agentbuilder_export_agent.test", "agent"),
-					resource.TestCheckResourceAttr("data.elasticstack_kibana_agentbuilder_export_agent.test", "include_dependencies", "true"),
-					resource.TestCheckResourceAttr("data.elasticstack_kibana_agentbuilder_export_agent.test", "tools.#", "2"),
-					resource.TestCheckResourceAttr("data.elasticstack_kibana_agentbuilder_export_agent.test", "workflows.#", "0"),
-					// The workflow tool should have workflow_id and workflow_configuration_yaml set
-					resource.TestCheckResourceAttrSet("data.elasticstack_kibana_agentbuilder_export_agent.test", "tools.0.workflow_id"),
-					resource.TestCheckResourceAttrSet("data.elasticstack_kibana_agentbuilder_export_agent.test", "tools.0.workflow_configuration_yaml"),
+					resource.TestCheckResourceAttrSet(dataSourceID, "id"),
+					resource.TestCheckResourceAttrSet(dataSourceID, "agent"),
+					resource.TestCheckResourceAttr(dataSourceID, "include_dependencies", "true"),
+					resource.TestCheckResourceAttr(dataSourceID, "tools.#", "2"),
 				),
 			},
 		},
 	})
 }
 
-// TestAccDataSourceKibanaExportABAgentWithStandaloneWorkflow tests that workflows referenced
-// via the agent's workflow_ids (not via a tool) are exported in the workflows list.
-func TestAccDataSourceKibanaExportABAgentWithStandaloneWorkflow(t *testing.T) {
-	agentID := "test-agent-swf-" + uuid.New().String()[:8]
+// TestAccDataSourceKibanaExportAgentBuilderAgentWorkflowTool tests that a workflow-type tool's
+// workflow_id and workflow_configuration_yaml are populated on export.
+func TestAccDataSourceKibanaExportAgentBuilderAgentWorkflowTool(t *testing.T) {
+	agentID := "test-agent-wft-" + uuid.New().String()[:8]
+	workflowToolID := "test-wf-tool-" + uuid.New().String()[:8]
 
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() { preCheckWithWorkflowsEnabled(t) },
@@ -159,17 +160,17 @@ func TestAccDataSourceKibanaExportABAgentWithStandaloneWorkflow(t *testing.T) {
 			{
 				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(minKibanaAgentBuilderAPIVersion),
 				ProtoV6ProviderFactories: acctest.Providers,
-				ConfigDirectory:          acctest.NamedTestCaseDirectory("read_with_standalone_workflow"),
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("read_workflow_tool"),
 				ConfigVariables: config.Variables{
-					"agent_id": config.StringVariable(agentID),
+					"agent_id":         config.StringVariable(agentID),
+					"workflow_tool_id": config.StringVariable(workflowToolID),
 				},
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttrSet("data.elasticstack_kibana_agentbuilder_export_agent.test", "id"),
-					resource.TestCheckResourceAttr("data.elasticstack_kibana_agentbuilder_export_agent.test", "include_dependencies", "true"),
-					resource.TestCheckResourceAttr("data.elasticstack_kibana_agentbuilder_export_agent.test", "tools.#", "0"),
-					resource.TestCheckResourceAttr("data.elasticstack_kibana_agentbuilder_export_agent.test", "workflows.#", "1"),
-					resource.TestCheckResourceAttrSet("data.elasticstack_kibana_agentbuilder_export_agent.test", "workflows.0.id"),
-					resource.TestCheckResourceAttrSet("data.elasticstack_kibana_agentbuilder_export_agent.test", "workflows.0.yaml"),
+					resource.TestCheckResourceAttrSet(dataSourceID, "id"),
+					resource.TestCheckResourceAttr(dataSourceID, "include_dependencies", "true"),
+					resource.TestCheckResourceAttr(dataSourceID, "tools.#", "1"),
+					resource.TestCheckResourceAttrSet(dataSourceID, "tools.0.workflow_id"),
+					resource.TestCheckResourceAttrSet(dataSourceID, "tools.0.workflow_configuration_yaml"),
 				),
 			},
 		},

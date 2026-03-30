@@ -28,12 +28,8 @@ type Agent struct {
 }
 
 type AgentConfiguration struct {
-	EnableElasticCapabilities *bool              `json:"enable_elastic_capabilities,omitempty"`
-	Instructions              *string            `json:"instructions,omitempty"`
-	PluginIDs                 []string           `json:"plugin_ids,omitempty"`
-	SkillIDs                  []string           `json:"skill_ids,omitempty"`
-	Tools                     []AgentToolsConfig `json:"tools,omitempty"`
-	WorkflowIDs               []string           `json:"workflow_ids,omitempty"`
+	Instructions *string            `json:"instructions,omitempty"`
+	Tools        []AgentToolsConfig `json:"tools,omitempty"`
 }
 
 type AgentToolsConfig struct {

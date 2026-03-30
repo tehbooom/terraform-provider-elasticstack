@@ -21,44 +21,35 @@ import (
 	"context"
 
 	"github.com/elastic/terraform-provider-elasticstack/generated/kbapi"
+	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
 	"github.com/elastic/terraform-provider-elasticstack/internal/models"
-	"github.com/elastic/terraform-provider-elasticstack/internal/utils/typeutils"
-	"github.com/hashicorp/go-version"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 type agentModel struct {
-	ID                        types.String `tfsdk:"id"`
-	SpaceID                   types.String `tfsdk:"space_id"`
-	Name                      types.String `tfsdk:"name"`
-	Description               types.String `tfsdk:"description"`
-	AvatarColor               types.String `tfsdk:"avatar_color"`
-	AvatarSymbol              types.String `tfsdk:"avatar_symbol"`
-	Labels                    types.List   `tfsdk:"labels"` // []string
-	Tools                     types.List   `tfsdk:"tools"`  // []string
-	Instructions              types.String `tfsdk:"instructions"`
-	EnableElasticCapabilities types.Bool   `tfsdk:"enable_elastic_capabilities"`
-	PluginIDs                 types.List   `tfsdk:"plugin_ids"`   // []string
-	SkillIDs                  types.List   `tfsdk:"skill_ids"`    // []string
-	WorkflowIDs               types.List   `tfsdk:"workflow_ids"` // []string
+	ID           types.String `tfsdk:"id"`
+	AgentID      types.String `tfsdk:"agent_id"`
+	SpaceID      types.String `tfsdk:"space_id"`
+	Name         types.String `tfsdk:"name"`
+	Description  types.String `tfsdk:"description"`
+	AvatarColor  types.String `tfsdk:"avatar_color"`
+	AvatarSymbol types.String `tfsdk:"avatar_symbol"`
+	Labels       types.List   `tfsdk:"labels"` // []string
+	Tools        types.List   `tfsdk:"tools"`  // []string
+	Instructions types.String `tfsdk:"instructions"`
 }
 
-func (model *agentModel) spaceID() string {
-	if typeutils.IsKnown(model.SpaceID) {
-		return model.SpaceID.ValueString()
-	}
-	return "default"
-}
-
-func (model *agentModel) populateFromAPI(ctx context.Context, data *models.Agent) diag.Diagnostics {
+func (model *agentModel) populateFromAPI(ctx context.Context, spaceID string, data *models.Agent) diag.Diagnostics {
 	if data == nil {
 		return nil
 	}
 
 	var diags diag.Diagnostics
 
-	model.ID = types.StringValue(data.ID)
+	model.ID = types.StringValue((&clients.CompositeID{ClusterID: spaceID, ResourceID: data.ID}).String())
+	model.AgentID = types.StringValue(data.ID)
+	model.SpaceID = types.StringValue(spaceID)
 	model.Name = types.StringValue(data.Name)
 
 	if data.Description != nil && *data.Description != "" {
@@ -87,18 +78,8 @@ func (model *agentModel) populateFromAPI(ctx context.Context, data *models.Agent
 		model.Instructions = types.StringNull()
 	}
 
-	if cfg.EnableElasticCapabilities != nil {
-		model.EnableElasticCapabilities = types.BoolValue(*cfg.EnableElasticCapabilities)
-	} else {
-		model.EnableElasticCapabilities = types.BoolNull()
-	}
-
-	diags.Append(populateList(ctx, cfg.PluginIDs, &model.PluginIDs)...)
-	diags.Append(populateList(ctx, cfg.SkillIDs, &model.SkillIDs)...)
-	diags.Append(populateList(ctx, cfg.WorkflowIDs, &model.WorkflowIDs)...)
 	diags.Append(populateList(ctx, data.Labels, &model.Labels)...)
 
-	// Extract tool IDs from nested configuration.
 	var toolIDs []string
 	if len(cfg.Tools) > 0 {
 		toolIDs = cfg.Tools[0].ToolIDs
@@ -118,79 +99,23 @@ func populateList(ctx context.Context, src []string, dst *types.List) diag.Diagn
 	return nil
 }
 
-// checkAdvancedConfigVersion returns an error diagnostic if any 9.4+ fields are set
-// on a server that doesn't support them.
-func (model agentModel) checkAdvancedConfigVersion(serverVersion *version.Version) diag.Diagnostics {
+func (model agentModel) toAPICreateModel(ctx context.Context) (kbapi.PostAgentBuilderAgentsJSONRequestBody, diag.Diagnostics) {
 	var diags diag.Diagnostics
-	if serverVersion == nil || !serverVersion.LessThan(minVersionAdvancedAgentConfig) {
-		return nil
-	}
-	advanced := map[string]types.List{
-		"workflow_ids": model.WorkflowIDs,
-		"plugin_ids":   model.PluginIDs,
-		"skill_ids":    model.SkillIDs,
-	}
-	for field, val := range advanced {
-		if typeutils.IsKnown(val) && !val.IsNull() && len(val.Elements()) > 0 {
-			diags.AddError(
-				"Unsupported server version",
-				field+" requires Elastic Stack v"+minVersionAdvancedAgentConfig.String()+" or later.",
-			)
-		}
-	}
-	if typeutils.IsKnown(model.EnableElasticCapabilities) && !model.EnableElasticCapabilities.IsNull() {
-		diags.AddError(
-			"Unsupported server version",
-			"enable_elastic_capabilities requires Elastic Stack v"+minVersionAdvancedAgentConfig.String()+" or later.",
-		)
-	}
-	return diags
-}
-
-func (model agentModel) toAPICreateModel(ctx context.Context, serverVersion *version.Version) (kbapi.PostAgentBuilderAgentsJSONRequestBody, diag.Diagnostics) {
-	var diags diag.Diagnostics
-
-	diags.Append(model.checkAdvancedConfigVersion(serverVersion)...)
-	if diags.HasError() {
-		return kbapi.PostAgentBuilderAgentsJSONRequestBody{}, diags
-	}
 
 	body := kbapi.PostAgentBuilderAgentsJSONRequestBody{
-		Id:          model.ID.ValueString(),
+		Id:          model.AgentID.ValueString(),
 		Name:        model.Name.ValueString(),
 		Description: model.Description.ValueString(),
 	}
 
-	if typeutils.IsKnown(model.AvatarColor) {
+	if !model.AvatarColor.IsNull() && !model.AvatarColor.IsUnknown() {
 		body.AvatarColor = model.AvatarColor.ValueStringPointer()
 	}
-	if typeutils.IsKnown(model.AvatarSymbol) {
+	if !model.AvatarSymbol.IsNull() && !model.AvatarSymbol.IsUnknown() {
 		body.AvatarSymbol = model.AvatarSymbol.ValueStringPointer()
 	}
-
-	if typeutils.IsKnown(model.Instructions) {
+	if !model.Instructions.IsNull() && !model.Instructions.IsUnknown() {
 		body.Configuration.Instructions = model.Instructions.ValueStringPointer()
-	}
-	if typeutils.IsKnown(model.EnableElasticCapabilities) {
-		body.Configuration.EnableElasticCapabilities = model.EnableElasticCapabilities.ValueBoolPointer()
-	}
-
-	pluginIDs, d := listToStrings(ctx, model.PluginIDs)
-	diags.Append(d...)
-	if len(pluginIDs) > 0 {
-		body.Configuration.PluginIds = &pluginIDs
-	}
-
-	skillIDs, d := listToStrings(ctx, model.SkillIDs)
-	diags.Append(d...)
-	if len(skillIDs) > 0 {
-		body.Configuration.SkillIds = &skillIDs
-	}
-
-	workflowIDs, d := listToStrings(ctx, model.WorkflowIDs)
-	diags.Append(d...)
-	if len(workflowIDs) > 0 {
-		body.Configuration.WorkflowIds = &workflowIDs
 	}
 
 	toolIDs, d := listToStrings(ctx, model.Tools)
@@ -208,30 +133,36 @@ func (model agentModel) toAPICreateModel(ctx context.Context, serverVersion *ver
 	return body, diags
 }
 
-func (model agentModel) toAPIUpdateModel(ctx context.Context, serverVersion *version.Version) (kbapi.PutAgentBuilderAgentsIdJSONRequestBody, diag.Diagnostics) {
+func (model agentModel) toAPIUpdateModel(ctx context.Context) (kbapi.PutAgentBuilderAgentsIdJSONRequestBody, diag.Diagnostics) {
 	var diags diag.Diagnostics
-
-	diags.Append(model.checkAdvancedConfigVersion(serverVersion)...)
-	if diags.HasError() {
-		return kbapi.PutAgentBuilderAgentsIdJSONRequestBody{}, diags
-	}
 
 	name := model.Name.ValueString()
 	body := kbapi.PutAgentBuilderAgentsIdJSONRequestBody{
 		Name: &name,
 	}
 
-	if typeutils.IsKnown(model.Description) {
+	if !model.Description.IsNull() && !model.Description.IsUnknown() {
 		body.Description = model.Description.ValueStringPointer()
 	}
-	if typeutils.IsKnown(model.AvatarColor) {
+	if !model.AvatarColor.IsNull() && !model.AvatarColor.IsUnknown() {
 		body.AvatarColor = model.AvatarColor.ValueStringPointer()
 	}
-	if typeutils.IsKnown(model.AvatarSymbol) {
+	if !model.AvatarSymbol.IsNull() && !model.AvatarSymbol.IsUnknown() {
 		body.AvatarSymbol = model.AvatarSymbol.ValueStringPointer()
 	}
 
-	cfg := &struct {
+	toolIDs, d := listToStrings(ctx, model.Tools)
+	diags.Append(d...)
+	tools := []struct {
+		ToolIds []string `json:"tool_ids"` //nolint:revive
+	}{{ToolIds: toolIDs}}
+
+	var instructions *string
+	if !model.Instructions.IsNull() && !model.Instructions.IsUnknown() {
+		instructions = model.Instructions.ValueStringPointer()
+	}
+
+	body.Configuration = &struct {
 		EnableElasticCapabilities *bool     `json:"enable_elastic_capabilities,omitempty"`
 		Instructions              *string   `json:"instructions,omitempty"`
 		PluginIds                 *[]string `json:"plugin_ids,omitempty"` //nolint:revive
@@ -240,41 +171,10 @@ func (model agentModel) toAPIUpdateModel(ctx context.Context, serverVersion *ver
 			ToolIds []string `json:"tool_ids"` //nolint:revive
 		} `json:"tools,omitempty"`
 		WorkflowIds *[]string `json:"workflow_ids,omitempty"` //nolint:revive
-	}{}
-
-	if typeutils.IsKnown(model.Instructions) {
-		cfg.Instructions = model.Instructions.ValueStringPointer()
+	}{
+		Instructions: instructions,
+		Tools:        &tools,
 	}
-	if typeutils.IsKnown(model.EnableElasticCapabilities) {
-		cfg.EnableElasticCapabilities = model.EnableElasticCapabilities.ValueBoolPointer()
-	}
-
-	pluginIDs, d := listToStrings(ctx, model.PluginIDs)
-	diags.Append(d...)
-	if len(pluginIDs) > 0 {
-		cfg.PluginIds = &pluginIDs
-	}
-
-	skillIDs, d := listToStrings(ctx, model.SkillIDs)
-	diags.Append(d...)
-	if len(skillIDs) > 0 {
-		cfg.SkillIds = &skillIDs
-	}
-
-	workflowIDs, d := listToStrings(ctx, model.WorkflowIDs)
-	diags.Append(d...)
-	if len(workflowIDs) > 0 {
-		cfg.WorkflowIds = &workflowIDs
-	}
-
-	toolIDs, d := listToStrings(ctx, model.Tools)
-	diags.Append(d...)
-	tools := []struct {
-		ToolIds []string `json:"tool_ids"` //nolint:revive
-	}{{ToolIds: toolIDs}}
-	cfg.Tools = &tools
-
-	body.Configuration = cfg
 
 	labels, d := listToStrings(ctx, model.Labels)
 	diags.Append(d...)

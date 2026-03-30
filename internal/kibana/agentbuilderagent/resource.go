@@ -23,8 +23,8 @@ import (
 
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
 	"github.com/hashicorp/go-version"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
-	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 var (
@@ -32,8 +32,6 @@ var (
 	_                               resource.ResourceWithConfigure   = &AgentResource{}
 	_                               resource.ResourceWithImportState = &AgentResource{}
 	minKibanaAgentBuilderAPIVersion                                  = version.Must(version.NewVersion("9.3.0"))
-	// workflow_ids, plugin_ids, skill_ids, and enable_elastic_capabilities require 9.4+
-	minVersionAdvancedAgentConfig = version.Must(version.NewVersion("9.4.0-SNAPSHOT"))
 )
 
 // NewResource is a helper function to simplify the provider implementation.
@@ -56,15 +54,5 @@ func (r *AgentResource) Metadata(_ context.Context, req resource.MetadataRequest
 }
 
 func (r *AgentResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	stateModel := agentModel{
-		ID:          types.StringValue(req.ID),
-		Labels:      types.ListNull(types.StringType),
-		Tools:       types.ListNull(types.StringType),
-		PluginIDs:   types.ListNull(types.StringType),
-		SkillIDs:    types.ListNull(types.StringType),
-		WorkflowIDs: types.ListNull(types.StringType),
-	}
-
-	diags := resp.State.Set(ctx, stateModel)
-	resp.Diagnostics.Append(diags...)
+	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }

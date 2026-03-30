@@ -99,7 +99,6 @@ func (d *DataSource) Read(ctx context.Context, req datasource.ReadRequest, resp 
 	state.Agent = types.StringValue(string(agentJSON))
 	state.IncludeDependencies = config.IncludeDependencies
 	state.Tools = []toolModel{}
-	state.Workflows = []workflowModel{}
 
 	includeDeps := typeutils.IsKnown(config.IncludeDependencies) && config.IncludeDependencies.ValueBool()
 
@@ -170,32 +169,6 @@ func (d *DataSource) Read(ctx context.Context, req datasource.ReadRequest, resp 
 			state.Tools = append(state.Tools, tm)
 		}
 
-		// Collect standalone workflow IDs from the agent configuration (workflow_ids).
-		// These are not associated with a tool and are exported separately.
-		// workflow_ids is only available in 9.4+, so skip on older servers.
-		if supportsAdvancedConfig {
-			standaloneWorkflowIDSet := make(map[string]struct{})
-			for _, id := range agent.Configuration.WorkflowIDs {
-				// Only fetch if not already fetched as a tool-embedded workflow.
-				if _, alreadyFetched := workflowsByID[id]; !alreadyFetched {
-					standaloneWorkflowIDSet[id] = struct{}{}
-				}
-			}
-
-			for workflowID := range standaloneWorkflowIDSet {
-				workflow, wDiags := kibanaoapi.GetWorkflow(ctx, oapiClient, spaceID, workflowID)
-				resp.Diagnostics.Append(wDiags...)
-				if resp.Diagnostics.HasError() {
-					return
-				}
-				if workflow != nil {
-					state.Workflows = append(state.Workflows, workflowModel{
-						ID:   types.StringValue(workflow.ID),
-						Yaml: customtypes.NewNormalizedYamlValue(workflow.Yaml),
-					})
-				}
-			}
-		}
 	}
 
 	diags = resp.State.Set(ctx, &state)

@@ -19,7 +19,7 @@ resource "elasticstack_kibana_space" "test" {
 }
 
 resource "elasticstack_kibana_agentbuilder_agent" "test" {
-  id           = var.agent_id
+  agent_id     = var.agent_id
   space_id     = elasticstack_kibana_space.test.space_id
   name         = "Space Agent"
   instructions = "You are a space-scoped agent."

@@ -35,19 +35,18 @@ func (r *AgentResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
-	serverVersion, sdkDiags := r.client.ServerVersion(ctx)
+	supported, sdkDiags := r.client.EnforceMinVersion(ctx, minKibanaAgentBuilderAPIVersion)
 	resp.Diagnostics.Append(diagutil.FrameworkDiagsFromSDK(sdkDiags)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
-	if serverVersion.LessThan(minKibanaAgentBuilderAPIVersion) {
+	if !supported {
 		resp.Diagnostics.AddError("Unsupported server version",
 			fmt.Sprintf("Agent Builder agents require Elastic Stack v%s or later.", minKibanaAgentBuilderAPIVersion))
 		return
 	}
 
-	body, diags := planModel.toAPICreateModel(ctx, serverVersion)
+	body, diags := planModel.toAPICreateModel(ctx)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -59,19 +58,21 @@ func (r *AgentResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
-	created, diags := kibanaoapi.CreateAgent(ctx, client, planModel.spaceID(), body)
+	spaceID := planModel.SpaceID.ValueString()
+
+	created, diags := kibanaoapi.CreateAgent(ctx, client, spaceID, body)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	agent, diags := kibanaoapi.GetAgent(ctx, client, planModel.spaceID(), created.ID)
+	agent, diags := kibanaoapi.GetAgent(ctx, client, spaceID, created.ID)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	diags = planModel.populateFromAPI(ctx, agent)
+	diags = planModel.populateFromAPI(ctx, spaceID, agent)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return

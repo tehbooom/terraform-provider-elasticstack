@@ -94,7 +94,7 @@ func preCheckWithWorkflowsEnabled(t *testing.T) {
 	}
 }
 
-func TestAccResourceAgent(t *testing.T) {
+func TestAccResourceAgentBuilderAgent(t *testing.T) {
 	agentID := "test-agent-" + uuid.New().String()[:8]
 	resourceID := testResourceID
 
@@ -109,7 +109,8 @@ func TestAccResourceAgent(t *testing.T) {
 					"agent_id": config.StringVariable(agentID),
 				},
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr(resourceID, "id", agentID),
+					resource.TestCheckResourceAttr(resourceID, "agent_id", agentID),
+					resource.TestCheckResourceAttrSet(resourceID, "id"),
 					resource.TestCheckResourceAttr(resourceID, "name", "Test Agent"),
 					resource.TestCheckResourceAttr(resourceID, "description", "A test agent for acceptance testing"),
 					resource.TestCheckResourceAttr(resourceID, "labels.#", "2"),
@@ -142,7 +143,8 @@ func TestAccResourceAgent(t *testing.T) {
 					"agent_id": config.StringVariable(agentID),
 				},
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr(resourceID, "id", agentID),
+					resource.TestCheckResourceAttr(resourceID, "agent_id", agentID),
+					resource.TestCheckResourceAttrSet(resourceID, "id"),
 					resource.TestCheckResourceAttr(resourceID, "name", "Updated Test Agent"),
 					resource.TestCheckResourceAttr(resourceID, "description", "An updated test agent"),
 					resource.TestCheckResourceAttr(resourceID, "labels.#", "3"),
@@ -153,59 +155,7 @@ func TestAccResourceAgent(t *testing.T) {
 	})
 }
 
-func TestAccResourceAgentNewFields(t *testing.T) {
-	agentID := "test-agent-fields-" + uuid.New().String()[:8]
-	resourceID := testResourceID
-
-	resource.Test(t, resource.TestCase{
-		PreCheck: func() { preCheckWithWorkflowsEnabled(t) },
-		Steps: []resource.TestStep{
-			{
-				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(minKibanaAgentBuilderAPIVersion),
-				ProtoV6ProviderFactories: acctest.Providers,
-				ConfigDirectory:          acctest.NamedTestCaseDirectory("create"),
-				ConfigVariables: config.Variables{
-					"agent_id": config.StringVariable(agentID),
-				},
-				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr(resourceID, "id", agentID),
-					resource.TestCheckResourceAttr(resourceID, "enable_elastic_capabilities", "true"),
-					resource.TestCheckResourceAttr(resourceID, "plugin_ids.#", "1"),
-					resource.TestCheckResourceAttr(resourceID, "plugin_ids.0", "plugin-a"),
-					resource.TestCheckResourceAttr(resourceID, "skill_ids.#", "2"),
-					resource.TestCheckResourceAttr(resourceID, "skill_ids.0", "skill-x"),
-					resource.TestCheckResourceAttr(resourceID, "skill_ids.1", "skill-y"),
-				),
-			},
-		},
-	})
-}
-
-func TestAccResourceAgentWorkflowIDs(t *testing.T) {
-	agentID := "test-agent-wf-" + uuid.New().String()[:8]
-	resourceID := testResourceID
-
-	resource.Test(t, resource.TestCase{
-		PreCheck: func() { preCheckWithWorkflowsEnabled(t) },
-		Steps: []resource.TestStep{
-			{
-				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(minKibanaAgentBuilderAPIVersion),
-				ProtoV6ProviderFactories: acctest.Providers,
-				ConfigDirectory:          acctest.NamedTestCaseDirectory("create"),
-				ConfigVariables: config.Variables{
-					"agent_id": config.StringVariable(agentID),
-				},
-				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr(resourceID, "id", agentID),
-					resource.TestCheckResourceAttr(resourceID, "workflow_ids.#", "1"),
-					resource.TestCheckResourceAttrSet(resourceID, "workflow_ids.0"),
-				),
-			},
-		},
-	})
-}
-
-func TestAccResourceAgentSpace(t *testing.T) {
+func TestAccResourceAgentBuilderAgentSpace(t *testing.T) {
 	agentID := "test-agent-space-" + uuid.New().String()[:8]
 	spaceID := fmt.Sprintf("test-space-%s", uuid.New().String()[:8])
 	resourceID := testResourceID
@@ -222,7 +172,8 @@ func TestAccResourceAgentSpace(t *testing.T) {
 					"space_id": config.StringVariable(spaceID),
 				},
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr(resourceID, "id", agentID),
+					resource.TestCheckResourceAttr(resourceID, "agent_id", agentID),
+					resource.TestCheckResourceAttrSet(resourceID, "id"),
 					resource.TestCheckResourceAttr(resourceID, "space_id", spaceID),
 					resource.TestCheckResourceAttr(resourceID, "name", "Space Agent"),
 				),

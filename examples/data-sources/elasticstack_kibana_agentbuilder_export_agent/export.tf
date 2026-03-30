@@ -1,4 +1,4 @@
-# Export an agent and all its dependencies (tools + workflows) from a cluster.
+# Export an agent and all its dependencies (tools) from a cluster.
 #
 # The single "agent" output captures everything needed to recreate the
 # agent in another cluster via the import configuration.
@@ -19,8 +19,7 @@ data "elasticstack_kibana_agentbuilder_export_agent" "this" {
 
 output "agent" {
   value = jsonencode({
-    agent     = data.elasticstack_kibana_agentbuilder_export_agent.this.agent
-    tools     = data.elasticstack_kibana_agentbuilder_export_agent.this.tools
-    workflows = data.elasticstack_kibana_agentbuilder_export_agent.this.workflows
+    agent = data.elasticstack_kibana_agentbuilder_export_agent.this.agent
+    tools = data.elasticstack_kibana_agentbuilder_export_agent.this.tools
   })
 }

@@ -20,11 +20,11 @@ package agentbuilderagent
 import (
 	"context"
 
-	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -39,6 +39,13 @@ func getSchema() schema.Schema {
 		MarkdownDescription: "Manages Kibana Agent Builder agents. See the [Agent Builder API documentation](https://www.elastic.co/guide/en/kibana/current/agent-builder-api.html) for more information.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
+				Computed:            true,
+				MarkdownDescription: "The composite ID of the agent: `<space_id>/<agent_id>`.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"agent_id": schema.StringAttribute{
 				Required:            true,
 				MarkdownDescription: "The agent ID.",
 				PlanModifiers: []planmodifier.String{
@@ -49,9 +56,12 @@ func getSchema() schema.Schema {
 				},
 			},
 			"space_id": schema.StringAttribute{
+				Computed:            true,
 				Optional:            true,
+				Default:             stringdefault.StaticString("default"),
 				MarkdownDescription: "An identifier for the space. If not provided, the default space is used.",
 				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
 					stringplanmodifier.RequiresReplace(),
 				},
 			},
@@ -87,38 +97,6 @@ func getSchema() schema.Schema {
 			"instructions": schema.StringAttribute{
 				Optional:            true,
 				MarkdownDescription: "Optional system instructions that define the agent behavior.",
-			},
-			"enable_elastic_capabilities": schema.BoolAttribute{
-				Optional: true,
-				MarkdownDescription: "When true, enables built-in Elastic capabilities for the agent. " +
-					"Requires Elastic Stack v9.4.0 or later.",
-			},
-			"plugin_ids": schema.ListAttribute{
-				ElementType: types.StringType,
-				Optional:    true,
-				MarkdownDescription: "Array of plugin IDs to assign to the agent. Maximum 100 elements. " +
-					"Requires Elastic Stack v9.4.0 or later.",
-				Validators: []validator.List{
-					listvalidator.SizeAtMost(100),
-				},
-			},
-			"skill_ids": schema.ListAttribute{
-				ElementType: types.StringType,
-				Optional:    true,
-				MarkdownDescription: "Array of skill IDs to be available to the agent. Maximum 100 elements. " +
-					"Requires Elastic Stack v9.4.0 or later.",
-				Validators: []validator.List{
-					listvalidator.SizeAtMost(100),
-				},
-			},
-			"workflow_ids": schema.ListAttribute{
-				ElementType: types.StringType,
-				Optional:    true,
-				MarkdownDescription: "List of workflow IDs that run before every agent execution, in order. " +
-					"Maximum 100 elements. Requires Elastic Stack v9.4.0 or later.",
-				Validators: []validator.List{
-					listvalidator.SizeAtMost(100),
-				},
 			},
 		},
 	}
