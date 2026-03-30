@@ -30,6 +30,8 @@ var (
 	_                               datasource.DataSource              = &DataSource{}
 	_                               datasource.DataSourceWithConfigure = &DataSource{}
 	minKibanaAgentBuilderAPIVersion                                    = version.Must(version.NewVersion("9.3.0"))
+	// workflow_ids, skill_ids, and plugin_ids on agents require 9.4+
+	minVersionAdvancedAgentConfig = version.Must(version.NewVersion("9.4.0-SNAPSHOT"))
 )
 
 // NewDataSource is a helper function to simplify the provider implementation.

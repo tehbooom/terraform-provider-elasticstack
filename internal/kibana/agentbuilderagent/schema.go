@@ -89,29 +89,33 @@ func getSchema() schema.Schema {
 				MarkdownDescription: "Optional system instructions that define the agent behavior.",
 			},
 			"enable_elastic_capabilities": schema.BoolAttribute{
-				Optional:            true,
-				MarkdownDescription: "When true, enables built-in Elastic capabilities for the agent.",
+				Optional: true,
+				MarkdownDescription: "When true, enables built-in Elastic capabilities for the agent. " +
+					"Requires Elastic Stack v9.4.0 or later.",
 			},
 			"plugin_ids": schema.ListAttribute{
-				ElementType:         types.StringType,
-				Optional:            true,
-				MarkdownDescription: "Array of plugin IDs to assign to the agent. Maximum 100 elements.",
+				ElementType: types.StringType,
+				Optional:    true,
+				MarkdownDescription: "Array of plugin IDs to assign to the agent. Maximum 100 elements. " +
+					"Requires Elastic Stack v9.4.0 or later.",
 				Validators: []validator.List{
 					listvalidator.SizeAtMost(100),
 				},
 			},
 			"skill_ids": schema.ListAttribute{
-				ElementType:         types.StringType,
-				Optional:            true,
-				MarkdownDescription: "Array of skill IDs to be available to the agent. Maximum 100 elements.",
+				ElementType: types.StringType,
+				Optional:    true,
+				MarkdownDescription: "Array of skill IDs to be available to the agent. Maximum 100 elements. " +
+					"Requires Elastic Stack v9.4.0 or later.",
 				Validators: []validator.List{
 					listvalidator.SizeAtMost(100),
 				},
 			},
 			"workflow_ids": schema.ListAttribute{
-				ElementType:         types.StringType,
-				Optional:            true,
-				MarkdownDescription: "Optional list of workflow IDs. When set, these workflows run before every agent execution, in order. Maximum 100 elements.",
+				ElementType: types.StringType,
+				Optional:    true,
+				MarkdownDescription: "List of workflow IDs that run before every agent execution, in order. " +
+					"Maximum 100 elements. Requires Elastic Stack v9.4.0 or later.",
 				Validators: []validator.List{
 					listvalidator.SizeAtMost(100),
 				},

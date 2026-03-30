@@ -55,6 +55,13 @@ func (d *DataSource) Read(ctx context.Context, req datasource.ReadRequest, resp 
 		return
 	}
 
+	serverVersion, sdkDiags := d.client.ServerVersion(ctx)
+	resp.Diagnostics.Append(diagutil.FrameworkDiagsFromSDK(sdkDiags)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	supportsAdvancedConfig := !serverVersion.LessThan(minVersionAdvancedAgentConfig)
+
 	oapiClient, err := d.client.GetKibanaOapiClient()
 	if err != nil {
 		resp.Diagnostics.AddError("unable to get Kibana client", err.Error())
@@ -129,7 +136,19 @@ func (d *DataSource) Read(ctx context.Context, req datasource.ReadRequest, resp 
 		}
 
 		// Fetch workflows referenced by tools (for embedding YAML into the tool model).
+		// The workflow API requires 9.4+, so error if workflow-type tools were found on an older server.
 		workflowsByID := make(map[string]*models.Workflow)
+		if len(toolWorkflowIDSet) > 0 && !supportsAdvancedConfig {
+			resp.Diagnostics.AddError(
+				"Unsupported server version",
+				fmt.Sprintf(
+					"This agent has workflow-type tools whose configuration cannot be exported: "+
+						"the workflow API requires Elastic Stack v%s or later.",
+					minVersionAdvancedAgentConfig,
+				),
+			)
+			return
+		}
 		for workflowID := range toolWorkflowIDSet {
 			workflow, wDiags := kibanaoapi.GetWorkflow(ctx, oapiClient, spaceID, workflowID)
 			resp.Diagnostics.Append(wDiags...)
@@ -153,25 +172,28 @@ func (d *DataSource) Read(ctx context.Context, req datasource.ReadRequest, resp 
 
 		// Collect standalone workflow IDs from the agent configuration (workflow_ids).
 		// These are not associated with a tool and are exported separately.
-		standaloneWorkflowIDSet := make(map[string]struct{})
-		for _, id := range agent.Configuration.WorkflowIDs {
-			// Only fetch if not already fetched as a tool-embedded workflow.
-			if _, alreadyFetched := workflowsByID[id]; !alreadyFetched {
-				standaloneWorkflowIDSet[id] = struct{}{}
+		// workflow_ids is only available in 9.4+, so skip on older servers.
+		if supportsAdvancedConfig {
+			standaloneWorkflowIDSet := make(map[string]struct{})
+			for _, id := range agent.Configuration.WorkflowIDs {
+				// Only fetch if not already fetched as a tool-embedded workflow.
+				if _, alreadyFetched := workflowsByID[id]; !alreadyFetched {
+					standaloneWorkflowIDSet[id] = struct{}{}
+				}
 			}
-		}
 
-		for workflowID := range standaloneWorkflowIDSet {
-			workflow, wDiags := kibanaoapi.GetWorkflow(ctx, oapiClient, spaceID, workflowID)
-			resp.Diagnostics.Append(wDiags...)
-			if resp.Diagnostics.HasError() {
-				return
-			}
-			if workflow != nil {
-				state.Workflows = append(state.Workflows, workflowModel{
-					ID:   types.StringValue(workflow.ID),
-					Yaml: customtypes.NewNormalizedYamlValue(workflow.Yaml),
-				})
+			for workflowID := range standaloneWorkflowIDSet {
+				workflow, wDiags := kibanaoapi.GetWorkflow(ctx, oapiClient, spaceID, workflowID)
+				resp.Diagnostics.Append(wDiags...)
+				if resp.Diagnostics.HasError() {
+					return
+				}
+				if workflow != nil {
+					state.Workflows = append(state.Workflows, workflowModel{
+						ID:   types.StringValue(workflow.ID),
+						Yaml: customtypes.NewNormalizedYamlValue(workflow.Yaml),
+					})
+				}
 			}
 		}
 	}

@@ -32,6 +32,8 @@ var (
 	_                               resource.ResourceWithConfigure   = &AgentResource{}
 	_                               resource.ResourceWithImportState = &AgentResource{}
 	minKibanaAgentBuilderAPIVersion                                  = version.Must(version.NewVersion("9.3.0"))
+	// workflow_ids, plugin_ids, skill_ids, and enable_elastic_capabilities require 9.4+
+	minVersionAdvancedAgentConfig = version.Must(version.NewVersion("9.4.0-SNAPSHOT"))
 )
 
 // NewResource is a helper function to simplify the provider implementation.

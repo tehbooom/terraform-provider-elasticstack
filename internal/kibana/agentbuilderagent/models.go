@@ -23,6 +23,7 @@ import (
 	"github.com/elastic/terraform-provider-elasticstack/generated/kbapi"
 	"github.com/elastic/terraform-provider-elasticstack/internal/models"
 	"github.com/elastic/terraform-provider-elasticstack/internal/utils/typeutils"
+	"github.com/hashicorp/go-version"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
@@ -117,8 +118,42 @@ func populateList(ctx context.Context, src []string, dst *types.List) diag.Diagn
 	return nil
 }
 
-func (model agentModel) toAPICreateModel(ctx context.Context) (kbapi.PostAgentBuilderAgentsJSONRequestBody, diag.Diagnostics) {
+// checkAdvancedConfigVersion returns an error diagnostic if any 9.4+ fields are set
+// on a server that doesn't support them.
+func (model agentModel) checkAdvancedConfigVersion(serverVersion *version.Version) diag.Diagnostics {
 	var diags diag.Diagnostics
+	if serverVersion == nil || !serverVersion.LessThan(minVersionAdvancedAgentConfig) {
+		return nil
+	}
+	advanced := map[string]types.List{
+		"workflow_ids": model.WorkflowIDs,
+		"plugin_ids":   model.PluginIDs,
+		"skill_ids":    model.SkillIDs,
+	}
+	for field, val := range advanced {
+		if typeutils.IsKnown(val) && !val.IsNull() && len(val.Elements()) > 0 {
+			diags.AddError(
+				"Unsupported server version",
+				field+" requires Elastic Stack v"+minVersionAdvancedAgentConfig.String()+" or later.",
+			)
+		}
+	}
+	if typeutils.IsKnown(model.EnableElasticCapabilities) && !model.EnableElasticCapabilities.IsNull() {
+		diags.AddError(
+			"Unsupported server version",
+			"enable_elastic_capabilities requires Elastic Stack v"+minVersionAdvancedAgentConfig.String()+" or later.",
+		)
+	}
+	return diags
+}
+
+func (model agentModel) toAPICreateModel(ctx context.Context, serverVersion *version.Version) (kbapi.PostAgentBuilderAgentsJSONRequestBody, diag.Diagnostics) {
+	var diags diag.Diagnostics
+
+	diags.Append(model.checkAdvancedConfigVersion(serverVersion)...)
+	if diags.HasError() {
+		return kbapi.PostAgentBuilderAgentsJSONRequestBody{}, diags
+	}
 
 	body := kbapi.PostAgentBuilderAgentsJSONRequestBody{
 		Id:          model.ID.ValueString(),
@@ -173,8 +208,13 @@ func (model agentModel) toAPICreateModel(ctx context.Context) (kbapi.PostAgentBu
 	return body, diags
 }
 
-func (model agentModel) toAPIUpdateModel(ctx context.Context) (kbapi.PutAgentBuilderAgentsIdJSONRequestBody, diag.Diagnostics) {
+func (model agentModel) toAPIUpdateModel(ctx context.Context, serverVersion *version.Version) (kbapi.PutAgentBuilderAgentsIdJSONRequestBody, diag.Diagnostics) {
 	var diags diag.Diagnostics
+
+	diags.Append(model.checkAdvancedConfigVersion(serverVersion)...)
+	if diags.HasError() {
+		return kbapi.PutAgentBuilderAgentsIdJSONRequestBody{}, diags
+	}
 
 	name := model.Name.ValueString()
 	body := kbapi.PutAgentBuilderAgentsIdJSONRequestBody{

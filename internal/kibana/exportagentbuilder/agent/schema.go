@@ -79,11 +79,11 @@ func (d *DataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp 
 							Computed:    true,
 						},
 						"workflow_id": schema.StringAttribute{
-							Description: "The ID of the referenced workflow. Only populated when `include_workflow` is true.",
+							Description: "The ID of the referenced workflow. Only populated for workflow-type tools. Requires Elastic Stack v9.4.0 or later.",
 							Computed:    true,
 						},
 						"workflow_configuration_yaml": schema.StringAttribute{
-							Description: "The YAML configuration of the referenced workflow. Only populated when `include_workflow` is true.",
+							Description: "The YAML configuration of the referenced workflow. Only populated for workflow-type tools. Requires Elastic Stack v9.4.0 or later.",
 							Computed:    true,
 							CustomType:  customtypes.NormalizedYamlType{},
 						},

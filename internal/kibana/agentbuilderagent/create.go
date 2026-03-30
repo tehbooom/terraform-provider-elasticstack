@@ -47,7 +47,7 @@ func (r *AgentResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
-	body, diags := planModel.toAPICreateModel(ctx)
+	body, diags := planModel.toAPICreateModel(ctx, serverVersion)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
