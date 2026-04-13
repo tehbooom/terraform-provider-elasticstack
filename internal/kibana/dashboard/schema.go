@@ -30,11 +30,13 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/objectvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/float64default"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -49,13 +51,14 @@ const (
 	pieChartTypePercent         = "percent"
 	operationTerms              = "terms"
 	panelTypeMarkdown           = "markdown"
-	panelTypeLens               = "lens"
+	panelTypeVis                = "vis"
 	panelTypeTimeSlider         = "time_slider_control"
 	panelTypeSloBurnRate        = "slo_burn_rate"
 	panelTypeSloErrorBudget     = "slo_error_budget"
 	panelTypeEsqlControl        = "esql_control"
 	panelTypeOptionsListControl = "options_list_control"
 	panelTypeRangeSlider        = "range_slider_control"
+	panelTypeSyntheticsMonitors = "synthetics_monitors"
 )
 
 var sloBurnRateDurationRegex = regexp.MustCompile(`^\d+[mhd]$`)
@@ -82,6 +85,7 @@ var panelConfigNames = []string{
 	"esql_control_config",
 	"options_list_control_config",
 	"range_slider_control_config",
+	"synthetics_monitors_config",
 }
 
 func siblingPanelConfigPathsExcept(name string, names []string) []path.Expression {
@@ -454,8 +458,11 @@ func getSchema() schema.Schema {
 				Required:            true,
 				Attributes: map[string]schema.Attribute{
 					"language": schema.StringAttribute{
-						MarkdownDescription: "Query language (e.g., `kql`, `lucene`, `kuery`).",
+						MarkdownDescription: "Query language (`kql` or `lucene`).",
 						Required:            true,
+						Validators: []validator.String{
+							stringvalidator.OneOf("kql", "lucene"),
+						},
 					},
 					"text": schema.StringAttribute{
 						MarkdownDescription: "Query string for KQL or Lucene. Exactly one of `text` or `json` must be set.",
@@ -527,8 +534,8 @@ func getSchema() schema.Schema {
 							MarkdownDescription: "The title of the section.",
 							Required:            true,
 						},
-						"uid": schema.StringAttribute{
-							MarkdownDescription: "The unique identifier of the section (API `uid`).",
+						"id": schema.StringAttribute{
+							MarkdownDescription: "The identifier of the section (API `id`).",
 							Optional:            true,
 							Computed:            true,
 							PlanModifiers: []planmodifier.String{
@@ -584,7 +591,7 @@ func getPanelSchema() schema.NestedAttributeObject {
 		},
 		Attributes: map[string]schema.Attribute{
 			"type": schema.StringAttribute{
-				MarkdownDescription: "The type of the panel (e.g. 'markdown', 'lens').",
+				MarkdownDescription: "The type of the panel (e.g. 'markdown', 'vis').",
 				Required:            true,
 			},
 			"grid": schema.SingleNestedAttribute{
@@ -609,8 +616,8 @@ func getPanelSchema() schema.NestedAttributeObject {
 					},
 				},
 			},
-			"uid": schema.StringAttribute{
-				MarkdownDescription: "The unique identifier of the panel (API `uid`).",
+			"id": schema.StringAttribute{
+				MarkdownDescription: "The identifier of the panel (API `id`).",
 				Optional:            true,
 				Computed:            true,
 				PlanModifiers: []planmodifier.String{
@@ -658,7 +665,7 @@ func getPanelSchema() schema.NestedAttributeObject {
 						Optional:            true,
 					},
 					"axis": schema.SingleNestedAttribute{
-						MarkdownDescription: "Axis configuration for X, left Y, and right Y axes.",
+						MarkdownDescription: "Axis configuration for X, Y, and secondary Y axes.",
 						Required:            true,
 						Attributes:          getXYAxisSchema(),
 					},
@@ -700,7 +707,7 @@ func getPanelSchema() schema.NestedAttributeObject {
 					objectvalidator.ConflictsWith(
 						siblingPanelConfigPathsExcept("xy_chart_config", panelConfigNames)...,
 					),
-					validators.AllowedIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeLens}),
+					validators.AllowedIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeVis}),
 				},
 			},
 			"treemap_config": schema.SingleNestedAttribute{
@@ -711,7 +718,7 @@ func getPanelSchema() schema.NestedAttributeObject {
 					objectvalidator.ConflictsWith(
 						siblingPanelConfigPathsExcept("treemap_config", panelConfigNames)...,
 					),
-					validators.AllowedIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeLens}),
+					validators.AllowedIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeVis}),
 				},
 			},
 			"mosaic_config": schema.SingleNestedAttribute{
@@ -725,7 +732,7 @@ func getPanelSchema() schema.NestedAttributeObject {
 					objectvalidator.ConflictsWith(
 						siblingPanelConfigPathsExcept("mosaic_config", panelConfigNames)...,
 					),
-					validators.AllowedIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeLens}),
+					validators.AllowedIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeVis}),
 				},
 			},
 			"datatable_config": schema.SingleNestedAttribute{
@@ -736,7 +743,7 @@ func getPanelSchema() schema.NestedAttributeObject {
 					objectvalidator.ConflictsWith(
 						siblingPanelConfigPathsExcept("datatable_config", panelConfigNames)...,
 					),
-					validators.AllowedIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeLens}),
+					validators.AllowedIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeVis}),
 				},
 			},
 			"tagcloud_config": schema.SingleNestedAttribute{
@@ -747,7 +754,7 @@ func getPanelSchema() schema.NestedAttributeObject {
 					objectvalidator.ConflictsWith(
 						siblingPanelConfigPathsExcept("tagcloud_config", panelConfigNames)...,
 					),
-					validators.AllowedIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeLens}),
+					validators.AllowedIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeVis}),
 				},
 			},
 			"heatmap_config": schema.SingleNestedAttribute{
@@ -758,7 +765,7 @@ func getPanelSchema() schema.NestedAttributeObject {
 					objectvalidator.ConflictsWith(
 						siblingPanelConfigPathsExcept("heatmap_config", panelConfigNames)...,
 					),
-					validators.AllowedIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeLens}),
+					validators.AllowedIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeVis}),
 				},
 			},
 			"waffle_config": schema.SingleNestedAttribute{
@@ -773,7 +780,7 @@ func getPanelSchema() schema.NestedAttributeObject {
 					objectvalidator.ConflictsWith(
 						siblingPanelConfigPathsExcept("waffle_config", panelConfigNames)...,
 					),
-					validators.AllowedIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeLens}),
+					validators.AllowedIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeVis}),
 					waffleConfigModeValidator{},
 				},
 			},
@@ -785,7 +792,7 @@ func getPanelSchema() schema.NestedAttributeObject {
 					objectvalidator.ConflictsWith(
 						siblingPanelConfigPathsExcept("region_map_config", panelConfigNames)...,
 					),
-					validators.AllowedIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeLens}),
+					validators.AllowedIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeVis}),
 				},
 			},
 			"gauge_config": schema.SingleNestedAttribute{
@@ -796,7 +803,7 @@ func getPanelSchema() schema.NestedAttributeObject {
 					objectvalidator.ConflictsWith(
 						siblingPanelConfigPathsExcept("gauge_config", panelConfigNames)...,
 					),
-					validators.AllowedIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeLens}),
+					validators.AllowedIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeVis}),
 				},
 			},
 			"metric_chart_config": schema.SingleNestedAttribute{
@@ -807,7 +814,7 @@ func getPanelSchema() schema.NestedAttributeObject {
 					objectvalidator.ConflictsWith(
 						siblingPanelConfigPathsExcept("metric_chart_config", panelConfigNames)...,
 					),
-					validators.AllowedIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeLens}),
+					validators.AllowedIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeVis}),
 				},
 			},
 			"pie_chart_config": schema.SingleNestedAttribute{
@@ -818,7 +825,7 @@ func getPanelSchema() schema.NestedAttributeObject {
 					objectvalidator.ConflictsWith(
 						siblingPanelConfigPathsExcept("pie_chart_config", panelConfigNames)...,
 					),
-					validators.AllowedIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeLens}),
+					validators.AllowedIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeVis}),
 				},
 			},
 			"legacy_metric_config": schema.SingleNestedAttribute{
@@ -829,7 +836,7 @@ func getPanelSchema() schema.NestedAttributeObject {
 					objectvalidator.ConflictsWith(
 						siblingPanelConfigPathsExcept("legacy_metric_config", panelConfigNames)...,
 					),
-					validators.AllowedIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeLens}),
+					validators.AllowedIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeVis}),
 				},
 			},
 			"time_slider_control_config": schema.SingleNestedAttribute{
@@ -1217,6 +1224,22 @@ func getPanelSchema() schema.NestedAttributeObject {
 					validators.RequiredIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeRangeSlider}),
 				},
 			},
+			"synthetics_monitors_config": schema.SingleNestedAttribute{
+				MarkdownDescription: panelConfigDescription(
+					"Configuration for a Synthetics monitors panel. Displays a table of Elastic Synthetics monitors "+
+						"and their current status. All fields are optional — omit the block entirely for a bare panel with no filtering.",
+					"synthetics_monitors_config",
+					panelConfigNames,
+				),
+				Optional:   true,
+				Attributes: getSyntheticsMonitorsSchema(),
+				Validators: []validator.Object{
+					objectvalidator.ConflictsWith(
+						siblingPanelConfigPathsExcept("synthetics_monitors_config", panelConfigNames)...,
+					),
+					validators.AllowedIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeSyntheticsMonitors}),
+				},
+			},
 			"config_json": schema.StringAttribute{
 				MarkdownDescription: panelConfigDescription("The configuration of the panel as a JSON string.", "config_json", panelConfigNames),
 				CustomType:          customtypes.NewJSONWithDefaultsType(populatePanelConfigJSONDefaults),
@@ -1226,7 +1249,7 @@ func getPanelSchema() schema.NestedAttributeObject {
 					stringvalidator.ConflictsWith(
 						siblingPanelConfigPathsExcept("config_json", panelConfigNames)...,
 					),
-					validators.AllowedIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeLens, panelTypeMarkdown}),
+					validators.AllowedIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeVis, panelTypeMarkdown}),
 				},
 			},
 		},
@@ -1330,20 +1353,20 @@ func getXYAxisSchema() map[string]schema.Attribute {
 						stringvalidator.OneOf("linear", "ordinal", "temporal"),
 					},
 				},
-				"extent_json": schema.StringAttribute{
-					MarkdownDescription: "Axis extent configuration as JSON. Can be 'full' mode with optional integer_rounding, or 'custom' mode with start, end, and optional integer_rounding.",
+				"domain_json": schema.StringAttribute{
+					MarkdownDescription: "Axis domain configuration as JSON. Can be 'fit' mode or 'custom' mode with min, max, and optional fit flags.",
 					CustomType:          jsontypes.NormalizedType{},
 					Optional:            true,
 				},
 			},
 		},
-		"left": schema.SingleNestedAttribute{
-			MarkdownDescription: "Left Y-axis configuration with scale and bounds.",
+		"y": schema.SingleNestedAttribute{
+			MarkdownDescription: "Primary Y-axis configuration with scale and bounds.",
 			Optional:            true,
 			Attributes:          getYAxisAttributes(),
 		},
-		"right": schema.SingleNestedAttribute{
-			MarkdownDescription: "Right Y-axis configuration with scale and bounds.",
+		"secondary_y": schema.SingleNestedAttribute{
+			MarkdownDescription: "Secondary Y-axis configuration with scale and bounds.",
 			Optional:            true,
 			Attributes:          getYAxisAttributes(),
 		},
@@ -1389,10 +1412,10 @@ func getYAxisAttributes() map[string]schema.Attribute {
 				stringvalidator.OneOf("time", "linear", "log", "sqrt"),
 			},
 		},
-		"extent_json": schema.StringAttribute{
-			MarkdownDescription: "Y-axis extent configuration as JSON. Can be 'full' or 'focus' mode, or 'custom' mode with start and end values.",
+		"domain_json": schema.StringAttribute{
+			MarkdownDescription: "Y-axis domain configuration as JSON. Can be 'fit' mode or 'custom' mode with min, max, and optional fit flags.",
 			CustomType:          jsontypes.NormalizedType{},
-			Optional:            true,
+			Required:            true,
 		},
 	}
 }
@@ -1575,7 +1598,7 @@ func getXYLayerSchema() schema.NestedAttributeObject {
 // getDataLayerAttributes returns attributes for data layers (standard and ES|QL)
 func getDataLayerAttributes() map[string]schema.Attribute {
 	return map[string]schema.Attribute{
-		"dataset_json": schema.StringAttribute{
+		"data_source_json": schema.StringAttribute{
 			MarkdownDescription: "Dataset configuration as JSON. For ES|QL layers, this specifies the ES|QL query. For standard layers, this specifies the data view and query.",
 			CustomType:          jsontypes.NormalizedType{},
 			Required:            true,
@@ -1617,7 +1640,7 @@ func getDataLayerAttributes() map[string]schema.Attribute {
 // getReferenceLineLayerAttributes returns attributes for reference line layers
 func getReferenceLineLayerAttributes() map[string]schema.Attribute {
 	return map[string]schema.Attribute{
-		"dataset_json": schema.StringAttribute{
+		"data_source_json": schema.StringAttribute{
 			MarkdownDescription: "Dataset configuration as JSON. For ES|QL layers, this specifies the ES|QL query. For standard layers, this specifies the data view and query.",
 			CustomType:          jsontypes.NormalizedType{},
 			Required:            true,
@@ -1701,7 +1724,7 @@ func getReferenceLineLayerAttributes() map[string]schema.Attribute {
 // getTagcloudSchema returns the schema for tagcloud chart configuration
 func getTagcloudSchema() map[string]schema.Attribute {
 	attrs := lensChartBaseAttributes()
-	attrs["dataset_json"] = schema.StringAttribute{
+	attrs["data_source_json"] = schema.StringAttribute{
 		MarkdownDescription: "Dataset configuration as JSON. For standard layers, this specifies the data view and query.",
 		CustomType:          jsontypes.NormalizedType{},
 		Required:            true,
@@ -1748,7 +1771,7 @@ func getTagcloudSchema() map[string]schema.Attribute {
 // getHeatmapSchema returns the schema for heatmap chart configuration
 func getHeatmapSchema() map[string]schema.Attribute {
 	attrs := lensChartBaseAttributes()
-	attrs["dataset_json"] = schema.StringAttribute{
+	attrs["data_source_json"] = schema.StringAttribute{
 		MarkdownDescription: "Dataset configuration as JSON. For standard heatmaps, this specifies the data view or index; for ES|QL, this specifies the ES|QL query dataset.",
 		CustomType:          jsontypes.NormalizedType{},
 		Required:            true,
@@ -1822,7 +1845,7 @@ func lensChartBaseAttributes() map[string]schema.Attribute {
 // getPartitionChartBaseSchema returns base attributes shared by partition charts (treemap, mosaic).
 func getPartitionChartBaseSchema() map[string]schema.Attribute {
 	attrs := lensChartBaseAttributes()
-	attrs["dataset_json"] = schema.StringAttribute{
+	attrs["data_source_json"] = schema.StringAttribute{
 		MarkdownDescription: "Dataset configuration as JSON. For non-ES|QL, this specifies the data view or index; for ES|QL, this specifies the ES|QL query dataset.",
 		CustomType:          jsontypes.NormalizedType{},
 		Required:            true,
@@ -2233,7 +2256,7 @@ func getHeatmapLegendSchema() map[string]schema.Attribute {
 // getRegionMapSchema returns the schema for region map chart configuration
 func getRegionMapSchema() map[string]schema.Attribute {
 	attrs := lensChartBaseAttributes()
-	attrs["dataset_json"] = schema.StringAttribute{
+	attrs["data_source_json"] = schema.StringAttribute{
 		MarkdownDescription: "Dataset configuration as JSON. For ES|QL, this specifies the ES|QL query. For standard layers, this specifies the data view and query.",
 		CustomType:          jsontypes.NormalizedType{},
 		Required:            true,
@@ -2259,7 +2282,7 @@ func getRegionMapSchema() map[string]schema.Attribute {
 // getLegacyMetricSchema returns the schema for legacy metric chart configuration
 func getLegacyMetricSchema() map[string]schema.Attribute {
 	attrs := lensChartBaseAttributes()
-	attrs["dataset_json"] = schema.StringAttribute{
+	attrs["data_source_json"] = schema.StringAttribute{
 		MarkdownDescription: "Dataset configuration as JSON. Use `dataView` or `index` for standard data sources, and `esql` or `table` for ES|QL sources.",
 		CustomType:          jsontypes.NormalizedType{},
 		Required:            true,
@@ -2280,7 +2303,7 @@ func getLegacyMetricSchema() map[string]schema.Attribute {
 // getGaugeSchema returns the schema for gauge chart configuration
 func getGaugeSchema() map[string]schema.Attribute {
 	attrs := lensChartBaseAttributes()
-	attrs["dataset_json"] = schema.StringAttribute{
+	attrs["data_source_json"] = schema.StringAttribute{
 		MarkdownDescription: "Dataset configuration as JSON. For standard layers, this specifies the data view and query.",
 		CustomType:          jsontypes.NormalizedType{},
 		Required:            true,
@@ -2306,7 +2329,7 @@ func getGaugeSchema() map[string]schema.Attribute {
 // getMetricChart returns the schema for metric chart configuration
 func getMetricChart() map[string]schema.Attribute {
 	attrs := lensChartBaseAttributes()
-	attrs["dataset_json"] = schema.StringAttribute{
+	attrs["data_source_json"] = schema.StringAttribute{
 		MarkdownDescription: metricChartDatasetDescription,
 		CustomType:          jsontypes.NormalizedType{},
 		Required:            true,
@@ -2364,7 +2387,7 @@ func getDatatableSchema() map[string]schema.Attribute {
 
 func getDatatableNoESQLSchema() map[string]schema.Attribute {
 	attrs := lensChartBaseAttributes()
-	attrs["dataset_json"] = schema.StringAttribute{
+	attrs["data_source_json"] = schema.StringAttribute{
 		MarkdownDescription: "Dataset configuration as JSON. For standard datatables, this specifies the data view and query.",
 		CustomType:          jsontypes.NormalizedType{},
 		Required:            true,
@@ -2432,7 +2455,7 @@ func getDatatableNoESQLSchema() map[string]schema.Attribute {
 
 func getDatatableESQLSchema() map[string]schema.Attribute {
 	attrs := lensChartBaseAttributes()
-	attrs["dataset_json"] = schema.StringAttribute{
+	attrs["data_source_json"] = schema.StringAttribute{
 		MarkdownDescription: "Dataset configuration as JSON. For ES|QL, this specifies the ES|QL query.",
 		CustomType:          jsontypes.NormalizedType{},
 		Required:            true,
@@ -2592,6 +2615,25 @@ func populateLensGroupByDefaults(model map[string]any) map[string]any {
 	return model
 }
 
+// pieChartLegendDefaultObject is the schema default when the legend block is omitted from config,
+// aligned with typical Kibana read-back so apply and refresh stay consistent.
+func pieChartLegendDefaultObject() types.Object {
+	return types.ObjectValueMust(
+		map[string]attr.Type{
+			"nested":               types.BoolType,
+			"size":                 types.StringType,
+			"truncate_after_lines": types.Float64Type,
+			"visible":              types.StringType,
+		},
+		map[string]attr.Value{
+			"nested":               types.BoolNull(),
+			"size":                 types.StringValue("auto"),
+			"truncate_after_lines": types.Float64Null(),
+			"visible":              types.StringValue("auto"),
+		},
+	)
+}
+
 // getPieChart returns the schema for pie chart configuration
 func getPieChart() map[string]schema.Attribute {
 	return map[string]schema.Attribute{
@@ -2603,7 +2645,7 @@ func getPieChart() map[string]schema.Attribute {
 			MarkdownDescription: "The description of the chart.",
 			Optional:            true,
 		},
-		"dataset_json": schema.StringAttribute{
+		"data_source_json": schema.StringAttribute{
 			MarkdownDescription: "Dataset configuration as JSON. For standard layers, this specifies the data view and query.",
 			CustomType:          jsontypes.NormalizedType{},
 			Optional:            true,
@@ -2634,10 +2676,15 @@ func getPieChart() map[string]schema.Attribute {
 				stringvalidator.OneOf("hidden", "inside", "outside"),
 			},
 		},
-		"legend_json": schema.StringAttribute{
-			MarkdownDescription: "Legend configuration as JSON.",
-			CustomType:          jsontypes.NormalizedType{},
-			Optional:            true,
+		"legend": schema.SingleNestedAttribute{
+			MarkdownDescription: "Optional legend configuration for the pie chart. " +
+				"Same shape as treemap and mosaic legends; Terraform `visible` maps to API `visibility`. " +
+				"When omitted, the schema default matches typical Kibana legend defaults (size and visibility " +
+				"`auto`) so apply/read stay consistent.",
+			Optional:   true,
+			Computed:   true,
+			Default:    objectdefault.StaticValue(pieChartLegendDefaultObject()),
+			Attributes: getPartitionLegendSchema(),
 		},
 		"query": schema.SingleNestedAttribute{
 			MarkdownDescription: "Query configuration for filtering data.",
@@ -2842,5 +2889,69 @@ func (v sloOverviewConfigModeValidator) ValidateObject(_ context.Context, req va
 			return
 		}
 		resp.Diagnostics.AddAttributeError(req.Path, "Invalid slo_overview_config", "Exactly one of `single` or `groups` must be configured inside `slo_overview_config`.")
+	}
+}
+
+// getSyntheticsMonitorsSchema returns the schema for the synthetics_monitors_config block.
+// All fields are optional — the block itself may be omitted for a bare panel.
+func getSyntheticsMonitorsSchema() map[string]schema.Attribute {
+	filterItemSchema := schema.NestedAttributeObject{
+		Attributes: map[string]schema.Attribute{
+			"label": schema.StringAttribute{
+				MarkdownDescription: "Display label for the filter option.",
+				Required:            true,
+			},
+			"value": schema.StringAttribute{
+				MarkdownDescription: "Value for the filter option.",
+				Required:            true,
+			},
+		},
+	}
+	return map[string]schema.Attribute{
+		"filters": schema.SingleNestedAttribute{
+			MarkdownDescription: "Optional filter configuration for the Synthetics monitors panel. Omit to show all monitors.",
+			Optional:            true,
+			Attributes: map[string]schema.Attribute{
+				"projects": schema.ListNestedAttribute{
+					MarkdownDescription: "Filter by project. Each entry has a `label` (display name) and a `value` (project ID).",
+					Optional:            true,
+					NestedObject:        filterItemSchema,
+				},
+				"tags": schema.ListNestedAttribute{
+					MarkdownDescription: "Filter by tags. Each entry has a `label` (display name) and a `value` (tag).",
+					Optional:            true,
+					NestedObject:        filterItemSchema,
+				},
+				"monitor_ids": schema.ListNestedAttribute{
+					MarkdownDescription: "Filter by monitor IDs. Each entry has a `label` (display name) and a `value` (monitor ID). The Kibana API accepts up to 5000 items.",
+					Optional:            true,
+					NestedObject:        filterItemSchema,
+				},
+				"locations": schema.ListNestedAttribute{
+					MarkdownDescription: "Filter by monitor locations. Each entry has a `label` (display name) and a `value` (location ID).",
+					Optional:            true,
+					NestedObject:        filterItemSchema,
+				},
+				"monitor_types": schema.ListNestedAttribute{
+					MarkdownDescription: "Filter by monitor types. Each entry has a `label` (display name) and a `value` (monitor type, e.g. `browser`, `http`, `tcp`, `icmp`).",
+					Optional:            true,
+					NestedObject:        filterItemSchema,
+				},
+				"statuses": schema.ListNestedAttribute{
+					MarkdownDescription: "Filter by monitor statuses. Each entry has a `label` " +
+						"(display name) and a `value` (status, e.g. `up`, `down`). The Kibana " +
+						"Dashboard API does not currently accept this field, so non-empty values " +
+						"are rejected until API support is added.",
+					Optional:     true,
+					NestedObject: filterItemSchema,
+					Validators: []validator.List{
+						unsupportedNonEmptyList(
+							"Unsupported synthetics statuses filter",
+							"The Kibana Dashboard API does not currently accept `synthetics_monitors_config.filters.statuses`, so non-empty values are not supported yet.",
+						),
+					},
+				},
+			},
+		},
 	}
 }
