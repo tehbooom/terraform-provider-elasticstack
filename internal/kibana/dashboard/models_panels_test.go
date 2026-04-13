@@ -33,14 +33,14 @@ import (
 func buildLensMosaicPanelForTest(t *testing.T) panelModel {
 	t.Helper()
 	groupBy := `[{"operation":"terms","collapse_by":"avg","fields":["host.name"],` +
-		`"color":{"mode":"categorical","palette":"default","mapping":[],"unassignedColor":{"type":"color_code","value":"#D3DAE6"}}}]`
+		`"color":{"mode":"categorical","palette":"default","mapping":[],"unassigned":{"type":"color_code","value":"#D3DAE6"}}}]`
 	groupBreakdownBy := `[{"operation":"terms","collapse_by":"avg","fields":["service.name"],` +
-		`"color":{"mode":"categorical","palette":"default","mapping":[],"unassignedColor":{"type":"color_code","value":"#D3DAE6"}}}]`
+		`"color":{"mode":"categorical","palette":"default","mapping":[],"unassigned":{"type":"color_code","value":"#D3DAE6"}}}]`
 	apiJSON := `{
 		"type": "mosaic",
 		"title": "Lens Mosaic",
-		"dataset": {"type":"dataView","id":"metrics-*"},
-		"query": {"language":"kuery","query":""},
+		"data_source": {"type":"dataView","id":"metrics-*"},
+		"query": {"language":"kql","expression":""},
 		"legend": {"size":"small"},
 		"metric": {"operation":"count"},
 		"group_by": ` + groupBy + `,
@@ -49,11 +49,8 @@ func buildLensMosaicPanelForTest(t *testing.T) panelModel {
 	var api kbapi.MosaicNoESQL
 	require.NoError(t, json.Unmarshal([]byte(apiJSON), &api))
 
-	var chart kbapi.MosaicChart
-	require.NoError(t, chart.FromMosaicNoESQL(api))
-
-	var attrs kbapi.KbnDashboardPanelLens_Config_0_Attributes
-	require.NoError(t, attrs.FromMosaicChart(chart))
+	var attrs kbapi.KbnDashboardPanelTypeVisConfig0
+	require.NoError(t, attrs.FromMosaicNoESQL(api))
 
 	converter := newMosaicPanelConfigConverter()
 	pm := &panelModel{}
@@ -61,7 +58,7 @@ func buildLensMosaicPanelForTest(t *testing.T) panelModel {
 	require.False(t, diags.HasError())
 
 	return panelModel{
-		Type:         types.StringValue("lens"),
+		Type:         types.StringValue("vis"),
 		ID:           types.StringValue("mosaic-1"),
 		Grid:         panelGridModel{X: types.Int64Value(0), Y: types.Int64Value(0), W: types.Int64Value(6), H: types.Int64Value(6)},
 		MosaicConfig: pm.MosaicConfig,
@@ -74,8 +71,8 @@ func buildLensTreemapPanelForTest(t *testing.T) panelModel {
 	apiJSON := `{
 		"type": "treemap",
 		"title": "Lens Treemap",
-		"dataset": {"type":"dataView","id":"metrics-*"},
-		"query": {"language":"kuery","query":""},
+		"data_source": {"type":"dataView","id":"metrics-*"},
+		"query": {"language":"kql","expression":""},
 		"legend": {"size":"small"},
 		"metrics": [{"operation":"count"}],
 		"group_by": [{"operation":"terms","field":"host.name","collapse_by":"avg"}]
@@ -83,11 +80,8 @@ func buildLensTreemapPanelForTest(t *testing.T) panelModel {
 	var api kbapi.TreemapNoESQL
 	require.NoError(t, json.Unmarshal([]byte(apiJSON), &api))
 
-	var chart kbapi.TreemapChart
-	require.NoError(t, chart.FromTreemapNoESQL(api))
-
-	var attrs kbapi.KbnDashboardPanelLens_Config_0_Attributes
-	require.NoError(t, attrs.FromTreemapChart(chart))
+	var attrs kbapi.KbnDashboardPanelTypeVisConfig0
+	require.NoError(t, attrs.FromTreemapNoESQL(api))
 
 	converter := newTreemapPanelConfigConverter()
 	pm := &panelModel{}
@@ -95,7 +89,7 @@ func buildLensTreemapPanelForTest(t *testing.T) panelModel {
 	require.False(t, diags.HasError())
 
 	return panelModel{
-		Type:          types.StringValue("lens"),
+		Type:          types.StringValue("vis"),
 		ID:            types.StringValue("treemap-1"),
 		Grid:          panelGridModel{X: types.Int64Value(0), Y: types.Int64Value(0), W: types.Int64Value(6), H: types.Int64Value(6)},
 		TreemapConfig: pm.TreemapConfig,
@@ -108,19 +102,16 @@ func buildLensWafflePanelForTest(t *testing.T) panelModel {
 	apiJSON := `{
 		"type": "waffle",
 		"title": "Lens Waffle",
-		"dataset": {"type":"dataView","id":"metrics-*"},
-		"query": {"language":"kuery","query":""},
+		"data_source": {"type":"dataView","id":"metrics-*"},
+		"query": {"language":"kql","expression":""},
 		"legend": {"size":"small"},
 		"metrics": [{"operation":"count"}]
 	}`
 	var api kbapi.WaffleNoESQL
 	require.NoError(t, json.Unmarshal([]byte(apiJSON), &api))
 
-	var chart kbapi.WaffleChart
-	require.NoError(t, chart.FromWaffleNoESQL(api))
-
-	var attrs kbapi.KbnDashboardPanelLens_Config_0_Attributes
-	require.NoError(t, attrs.FromWaffleChart(chart))
+	var attrs kbapi.KbnDashboardPanelTypeVisConfig0
+	require.NoError(t, attrs.FromWaffleNoESQL(api))
 
 	converter := newWafflePanelConfigConverter()
 	pm := &panelModel{}
@@ -128,7 +119,7 @@ func buildLensWafflePanelForTest(t *testing.T) panelModel {
 	require.False(t, diags.HasError())
 
 	return panelModel{
-		Type:         types.StringValue("lens"),
+		Type:         types.StringValue("vis"),
 		ID:           types.StringValue("waffle-1"),
 		Grid:         panelGridModel{X: types.Int64Value(0), Y: types.Int64Value(0), W: types.Int64Value(8), H: types.Int64Value(10)},
 		WaffleConfig: pm.WaffleConfig,
@@ -164,7 +155,7 @@ func Test_mapPanelsFromAPI(t *testing.T) {
 						"w": 2,
 						"h": 3
 					},
-					"uid": "1",
+					"id": "1",
 					"type": "markdown",
 					"config": {
 						"title": "My Panel",
@@ -236,7 +227,7 @@ func Test_mapPanelsFromAPI(t *testing.T) {
 					"title": "My Section",
 					"grid": { "y": 100 },
 					"collapsed": true,
-					"uid": "section1",
+					"id": "section1",
 					"panels": [
 						{
 							"type": "markdown",
@@ -282,13 +273,13 @@ func Test_mapPanelsFromAPI(t *testing.T) {
 				{
 					"grid": { "x": 0, "y": 0, "w": 6, "h": 6 },
 					"type": "markdown",
-					"uid": "panel1",
+					"id": "panel1",
 					"config": { "title": "Panel 1", "content": "Panel 1 body" }
 				},
 				{
 					"title": "Section 1",
 					"grid": { "y": 100 },
-					"uid": "section1",
+					"id": "section1",
 					"panels": [
 						{
 							"type": "markdown",
@@ -299,8 +290,8 @@ func Test_mapPanelsFromAPI(t *testing.T) {
 				},
 				{
 					"grid": { "x": 6, "y": 0, "w": 6, "h": 6 },
-					"type": "lens",
-					"uid": "panel2",
+					"type": "vis",
+					"id": "panel2",
 					"config": { "title": "Panel 2" }
 				}
 			]`,
@@ -323,7 +314,7 @@ func Test_mapPanelsFromAPI(t *testing.T) {
 					ConfigJSON: customtypes.NewJSONWithDefaultsValue(`{ "title": "Panel 1", "content": "Panel 1 body" }`, populatePanelConfigJSONDefaults),
 				},
 				{
-					Type: types.StringValue("lens"),
+					Type: types.StringValue("vis"),
 					Grid: panelGridModel{
 						X: types.Int64Value(6),
 						Y: types.Int64Value(0),
@@ -463,7 +454,7 @@ func Test_panelsToAPI(t *testing.T) {
 						"x": 0,
 						"y": 1
 					},
-					"uid": "1",
+					"id": "1",
 					"type": "markdown",
 					"config": {
 						"content": "some content",
@@ -512,19 +503,18 @@ func Test_panelsToAPI(t *testing.T) {
 			expected: `[
 				{
 					"grid": {"h": 6, "w": 6, "x": 0, "y": 0},
-					"uid": "treemap-1",
-					"type": "lens",
+					"id": "treemap-1",
+					"type": "vis",
 					"config": {
-						"attributes": {
-							"type": "treemap",
-							"title": "Lens Treemap",
-							"dataset": {"type":"dataView","id":"metrics-*"},
-							"query": {"language":"kuery","query":""},
-							"legend": {"size":"small"},
-							"metrics": [{"operation":"count"}],
-							"group_by": [{"operation":"terms","field":"host.name","collapse_by":"avg"}],
-							"value_display": {"mode": ""}
-						},
+						"type": "treemap",
+						"title": "Lens Treemap",
+						"data_source": {"type":"dataView","id":"metrics-*"},
+						"filters": [],
+						"query": {"language":"kql","expression":""},
+						"legend": {"size":"small"},
+						"metrics": [{"operation":"count"}],
+						"group_by": [{"operation":"terms","field":"host.name","collapse_by":"avg"}],
+						"values": {},
 						"time_range": {"from": "now-15m", "to": "now"}
 					}
 				}
@@ -540,24 +530,23 @@ func Test_panelsToAPI(t *testing.T) {
 			expected: `[
 				{
 					"grid": {"h": 6, "w": 6, "x": 0, "y": 0},
-					"uid": "mosaic-1",
-					"type": "lens",
+					"id": "mosaic-1",
+					"type": "vis",
 					"config": {
-						"attributes": {
-							"type": "mosaic",
-							"title": "Lens Mosaic",
-							"dataset": {"type":"dataView","id":"metrics-*"},
-							"query": {"language":"kuery","query":""},
-							"legend": {"size":"small"},
-							"metric": {"operation":"count"},
-							"group_by": [{"operation":"terms","collapse_by":"avg","fields":["host.name"],
-								"color":{"mode":"categorical","palette":"default","mapping":[],
-								"unassignedColor":{"type":"color_code","value":"#D3DAE6"}}}],
-							"group_breakdown_by": [{"operation":"terms","collapse_by":"avg","fields":["service.name"],
-								"color":{"mode":"categorical","palette":"default","mapping":[],
-								"unassignedColor":{"type":"color_code","value":"#D3DAE6"}}}],
-							"value_display": {"mode": ""}
-						},
+						"type": "mosaic",
+						"title": "Lens Mosaic",
+						"data_source": {"type":"dataView","id":"metrics-*"},
+						"filters": [],
+						"query": {"language":"kql","expression":""},
+						"legend": {"size":"small"},
+						"metric": {"operation":"count"},
+						"group_by": [{"operation":"terms","collapse_by":"avg","fields":["host.name"],
+							"color":{"mode":"categorical","palette":"default","mapping":[],
+							"unassigned":{"type":"color_code","value":"#D3DAE6"}}}],
+						"group_breakdown_by": [{"operation":"terms","collapse_by":"avg","fields":["service.name"],
+							"color":{"mode":"categorical","palette":"default","mapping":[],
+							"unassigned":{"type":"color_code","value":"#D3DAE6"}}}],
+						"values": {},
 						"time_range": {"from": "now-15m", "to": "now"}
 					}
 				}
@@ -573,18 +562,17 @@ func Test_panelsToAPI(t *testing.T) {
 			expected: `[
 				{
 					"grid": {"h": 10, "w": 8, "x": 0, "y": 0},
-					"uid": "waffle-1",
-					"type": "lens",
+					"id": "waffle-1",
+					"type": "vis",
 					"config": {
-						"attributes": {
-							"type": "waffle",
-							"title": "Lens Waffle",
-							"dataset": {"type":"dataView","id":"metrics-*"},
-							"query": {"language":"kuery","query":""},
-							"legend": {"size":"small"},
-							"metrics": [{"operation":"count"}],
-							"value_display": {"mode": "percentage"}
-						},
+						"type": "waffle",
+						"title": "Lens Waffle",
+						"data_source": {"type":"dataView","id":"metrics-*"},
+						"filters": [],
+						"query": {"language":"kql","expression":""},
+						"legend": {"size":"small"},
+						"metrics": [{"operation":"count"}],
+						"values": {"mode": "percentage"},
 						"time_range": {"from": "now-15m", "to": "now"}
 					}
 				}
@@ -614,7 +602,7 @@ func Test_panelsToAPI(t *testing.T) {
 			expected: `[
 				{
 					"title": "Test Section",
-					"uid": "sec-1",
+					"id": "sec-1",
 					"collapsed": true,
 					"grid": {"y": 50},
 					"panels": [
@@ -659,7 +647,7 @@ func Test_panelModel_toAPI_configJSONErrors(t *testing.T) {
 				ConfigJSON: customtypes.NewJSONWithDefaultsValue(`{"content":"ignored"}`, populatePanelConfigJSONDefaults),
 			},
 			errorSummary:  "Unsupported panel type for config_json",
-			errorContains: "Only markdown and lens panel types are currently supported",
+			errorContains: "Only markdown and vis panel types are currently supported",
 		},
 		{
 			name: "rejects missing panel configuration",
@@ -682,14 +670,23 @@ func Test_panelModel_toAPI_configJSONErrors(t *testing.T) {
 			errorContains: "unexpected end of JSON input",
 		},
 		{
-			name: "rejects invalid lens config_json",
+			name: "rejects invalid vis config_json",
 			panel: panelModel{
-				Type:       types.StringValue("lens"),
+				Type:       types.StringValue("vis"),
 				Grid:       panelGridModel{X: types.Int64Value(0), Y: types.Int64Value(0)},
 				ConfigJSON: customtypes.NewJSONWithDefaultsValue(`{"attributes":`, populatePanelConfigJSONDefaults),
 			},
-			errorSummary:  "Failed to create lens panel",
+			errorSummary:  "Failed to create visualization panel",
 			errorContains: "unexpected end of JSON input",
+		},
+		{
+			name: "rejects missing slo burn rate config",
+			panel: panelModel{
+				Type: types.StringValue("slo_burn_rate"),
+				Grid: panelGridModel{X: types.Int64Value(0), Y: types.Int64Value(0)},
+			},
+			errorSummary:  "Missing SLO burn rate panel configuration",
+			errorContains: "SLO burn rate panels require `slo_burn_rate_config`.",
 		},
 	}
 
