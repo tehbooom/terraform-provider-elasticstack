@@ -20,6 +20,7 @@ package agentbuilderagent
 import (
 	"context"
 
+	providerschema "github.com/elastic/terraform-provider-elasticstack/internal/schema"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -98,6 +99,9 @@ func getSchema() schema.Schema {
 				Optional:            true,
 				MarkdownDescription: "Optional system instructions that define the agent behavior.",
 			},
+		},
+		Blocks: map[string]schema.Block{
+			"kibana_connection": providerschema.GetKbFWConnectionBlock(),
 		},
 	}
 }

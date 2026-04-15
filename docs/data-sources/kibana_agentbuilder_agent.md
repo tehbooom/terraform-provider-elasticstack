@@ -167,6 +167,7 @@ resource "elasticstack_kibana_agentbuilder_agent" "agent" {
 ### Optional
 
 - `include_dependencies` (Boolean) If `true`, exports the agent along with its tools and workflows. If omitted, `false` is used (tool rows only list `id`, `space_id`, and `tool_id` unless this is `true`).
+- `kibana_connection` (Block List) Kibana connection configuration block. (see [below for nested schema](#nestedblock--kibana_connection))
 - `space_id` (String) An identifier for the space. If space_id is not provided, the default space is used.
 
 ### Read-Only
@@ -179,6 +180,20 @@ resource "elasticstack_kibana_agentbuilder_agent" "agent" {
 - `labels` (Set of String) List of labels for the agent.
 - `name` (String) The agent name.
 - `tools` (Attributes List) Tools attached to the agent. When include_dependencies is true, each entry includes full tool data and workflow YAML for workflow-type tools. When false, only id (composite space/tool), space_id, and tool_id are set. (see [below for nested schema](#nestedatt--tools))
+
+<a id="nestedblock--kibana_connection"></a>
+### Nested Schema for `kibana_connection`
+
+Optional:
+
+- `api_key` (String, Sensitive) API Key to use for authentication to Kibana
+- `bearer_token` (String, Sensitive) Bearer Token to use for authentication to Kibana
+- `ca_certs` (List of String) A list of paths to CA certificates to validate the certificate presented by the Kibana server.
+- `endpoints` (List of String, Sensitive) A comma-separated list of endpoints where the terraform provider will point to, this must include the http(s) schema and port number.
+- `insecure` (Boolean) Disable TLS certificate validation
+- `password` (String, Sensitive) Password to use for API authentication to Kibana.
+- `username` (String) Username to use for API authentication to Kibana.
+
 
 <a id="nestedatt--tools"></a>
 ### Nested Schema for `tools`

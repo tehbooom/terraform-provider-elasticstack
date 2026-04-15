@@ -19,6 +19,8 @@ package agentbuilderagent
 
 import (
 	"context"
+
+	providerschema "github.com/elastic/terraform-provider-elasticstack/internal/schema"
 	"github.com/elastic/terraform-provider-elasticstack/internal/utils/customtypes"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	dsschema "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
@@ -125,6 +127,9 @@ func (d *DataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp 
 					},
 				},
 			},
+		},
+		Blocks: map[string]dsschema.Block{
+			"kibana_connection": providerschema.GetKbFWConnectionBlock(),
 		},
 	}
 }

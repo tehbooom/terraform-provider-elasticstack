@@ -35,7 +35,13 @@ func (r *AgentResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
-	supported, sdkDiags := r.client.EnforceMinVersion(ctx, minKibanaAgentBuilderAPIVersion)
+	client, diags := r.client.GetKibanaClient(ctx, planModel.KibanaConnection)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	supported, sdkDiags := client.EnforceMinVersion(ctx, minKibanaAgentBuilderAPIVersion)
 	resp.Diagnostics.Append(diagutil.FrameworkDiagsFromSDK(sdkDiags)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -52,7 +58,7 @@ func (r *AgentResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
-	client, err := r.client.GetKibanaOapiClient()
+	oapiClient, err := client.GetKibanaOapiClient()
 	if err != nil {
 		resp.Diagnostics.AddError(err.Error(), "")
 		return
@@ -60,13 +66,13 @@ func (r *AgentResource) Create(ctx context.Context, req resource.CreateRequest, 
 
 	spaceID := planModel.SpaceID.ValueString()
 
-	created, diags := kibanaoapi.CreateAgent(ctx, client, spaceID, body)
+	created, diags := kibanaoapi.CreateAgent(ctx, oapiClient, spaceID, body)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	agent, diags := kibanaoapi.GetAgent(ctx, client, spaceID, created.ID)
+	agent, diags := kibanaoapi.GetAgent(ctx, oapiClient, spaceID, created.ID)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return

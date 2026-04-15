@@ -43,7 +43,13 @@ func (d *DataSource) Read(ctx context.Context, req datasource.ReadRequest, resp 
 		return
 	}
 
-	supported, sdkDiags := d.client.EnforceMinVersion(ctx, minKibanaAgentBuilderAPIVersion)
+	kbClient, diags := d.client.GetKibanaClient(ctx, config.KibanaConnection)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	supported, sdkDiags := kbClient.EnforceMinVersion(ctx, minKibanaAgentBuilderAPIVersion)
 	resp.Diagnostics.Append(diagutil.FrameworkDiagsFromSDK(sdkDiags)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -55,7 +61,7 @@ func (d *DataSource) Read(ctx context.Context, req datasource.ReadRequest, resp 
 		return
 	}
 
-	serverVersion, sdkDiags := d.client.ServerVersion(ctx)
+	serverVersion, sdkDiags := kbClient.ServerVersion(ctx)
 	resp.Diagnostics.Append(diagutil.FrameworkDiagsFromSDK(sdkDiags)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -73,7 +79,7 @@ func (d *DataSource) Read(ctx context.Context, req datasource.ReadRequest, resp 
 		includeDeps = config.IncludeDependencies.ValueBool()
 	}
 
-	client, err := d.client.GetKibanaOapiClient()
+	client, err := kbClient.GetKibanaOapiClient()
 	if err != nil {
 		resp.Diagnostics.AddError("unable to get Kibana client", err.Error())
 		return

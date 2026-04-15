@@ -29,20 +29,22 @@ import (
 )
 
 type agentModel struct {
-	ID           types.String `tfsdk:"id"`
-	AgentID      types.String `tfsdk:"agent_id"`
-	SpaceID      types.String `tfsdk:"space_id"`
-	Name         types.String `tfsdk:"name"`
-	Description  types.String `tfsdk:"description"`
-	AvatarColor  types.String `tfsdk:"avatar_color"`
-	AvatarSymbol types.String `tfsdk:"avatar_symbol"`
-	Labels       types.List   `tfsdk:"labels"` // []string
-	Tools        types.List   `tfsdk:"tools"`  // []string
-	Instructions types.String `tfsdk:"instructions"`
+	ID               types.String `tfsdk:"id"`
+	KibanaConnection types.List   `tfsdk:"kibana_connection"`
+	AgentID          types.String `tfsdk:"agent_id"`
+	SpaceID          types.String `tfsdk:"space_id"`
+	Name             types.String `tfsdk:"name"`
+	Description      types.String `tfsdk:"description"`
+	AvatarColor      types.String `tfsdk:"avatar_color"`
+	AvatarSymbol     types.String `tfsdk:"avatar_symbol"`
+	Labels           types.List   `tfsdk:"labels"` // []string
+	Tools            types.List   `tfsdk:"tools"`  // []string
+	Instructions     types.String `tfsdk:"instructions"`
 }
 
 type agentDataSourceModel struct {
 	ID                  types.String `tfsdk:"id"`
+	KibanaConnection    types.List   `tfsdk:"kibana_connection"`
 	AgentID             types.String `tfsdk:"agent_id"`
 	SpaceID             types.String `tfsdk:"space_id"`
 	IncludeDependencies types.Bool   `tfsdk:"include_dependencies"`
