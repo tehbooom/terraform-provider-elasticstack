@@ -41,9 +41,7 @@ resource "elasticstack_elasticsearch_watch" "example" {
   }
 }
 ```
-
 ## Requirements
-
 ### Requirement: Watcher CRUD APIs (REQ-001–REQ-004)
 
 The resource SHALL use the Elasticsearch Put Watch API to create and update watches ([docs](https://www.elastic.co/guide/en/elasticsearch/reference/current/watcher-api-put-watch.html)). The resource SHALL use the Elasticsearch Get Watch API to read a watch ([docs](https://www.elastic.co/guide/en/elasticsearch/reference/current/watcher-api-get-watch.html)). The resource SHALL use the Elasticsearch Delete Watch API to delete a watch ([docs](https://www.elastic.co/guide/en/elasticsearch/reference/current/watcher-api-delete-watch.html)). When Elasticsearch returns a non-success status for create, update, read, or delete requests (other than 404 on read), the resource SHALL surface the API error as a Terraform diagnostic.
@@ -71,20 +69,17 @@ The resource SHALL expose a computed `id` attribute representing the watch in th
 - THEN the `id` in state SHALL be in the format `<cluster_uuid>/<watch_id>`
 
 ### Requirement: Import (REQ-007–REQ-008)
-
-The resource SHALL support import via `schema.ImportStatePassthroughContext`, persisting the imported `id` value directly to state. For import and all subsequent read/delete operations, the resource SHALL require the `id` to be in the format `<cluster_uuid>/<watch_id>` and SHALL return an error diagnostic when the format is invalid.
+The resource SHALL support import by storing the provided `id` value in state when the import identifier is in the format `<cluster_uuid>/<watch_id>`. For import and all subsequent read/delete operations, the resource SHALL require the `id` to be in the format `<cluster_uuid>/<watch_id>` and SHALL return an error diagnostic when the format is invalid.
 
 #### Scenario: Import with valid composite id
-
-- GIVEN an `id` in the format `<cluster_uuid>/<watch_id>`
-- WHEN import completes
-- THEN the `id` SHALL be stored in state for subsequent operations
+- **GIVEN** an `id` in the format `<cluster_uuid>/<watch_id>`
+- **WHEN** import completes
+- **THEN** the `id` SHALL be stored in state for subsequent operations
 
 #### Scenario: Invalid id format
-
-- GIVEN a stored or imported `id` that does not contain exactly one `/`
-- WHEN read or delete runs
-- THEN the resource SHALL return an error diagnostic with "Wrong resource ID"
+- **GIVEN** a stored or imported `id` that does not contain exactly one `/`
+- **WHEN** read or delete runs
+- **THEN** the resource SHALL return an error diagnostic with "Wrong resource ID"
 
 ### Requirement: Lifecycle (REQ-009)
 
@@ -138,7 +133,7 @@ On delete, the resource SHALL parse `id` to extract the watch identifier and cal
 
 ### Requirement: JSON field mapping — create/update (REQ-018–REQ-022)
 
-On create and update, the resource SHALL unmarshal each JSON string attribute (`trigger`, `input`, `condition`, `actions`, `metadata`) into a `map[string]any` before constructing the API request body; if any unmarshal fails, the resource SHALL return a diagnostic error and SHALL NOT call the Put Watch API. The `transform` attribute SHALL be included in the API request body only when it is present in config; if present, it SHALL be unmarshalled into a `map[string]any` before inclusion. The `throttle_period_in_millis` value SHALL be included in the request body when non-zero. The `active` flag SHALL be passed as a query parameter to the Put Watch API.
+On create and update, the resource SHALL unmarshal each JSON string attribute (`trigger`, `input`, `condition`, `actions`, `metadata`) into a `map[string]any` before constructing the API request body; if any unmarshal fails, the resource SHALL return a diagnostic error and SHALL NOT call the Put Watch API. When `transform` is configured, the resource SHALL include its JSON object in the Put Watch request body. When `transform` is not configured on **create**, the `transform` field SHALL be omitted from the Put Watch JSON body. When `transform` is not configured on **update**, the Put Watch JSON body SHALL include `transform` with an empty JSON object `{}` so Elasticsearch clears any existing transform (omitting the field is not sufficient on update). The `throttle_period_in_millis` value SHALL be included in the request body when non-zero. The `active` flag SHALL be passed as a query parameter to the Put Watch API.
 
 #### Scenario: Invalid JSON in trigger
 
@@ -146,24 +141,52 @@ On create and update, the resource SHALL unmarshal each JSON string attribute (`
 - WHEN create or update runs
 - THEN the resource SHALL return a diagnostic error and SHALL NOT call the Put Watch API
 
-#### Scenario: transform omitted when not set
+#### Scenario: transform omitted when not set on create
 
 - GIVEN `transform` is not configured
-- WHEN create or update builds the request body
-- THEN the `transform` field SHALL be omitted from the API request body
+- WHEN create builds the request body
+- THEN the `transform` field SHALL be omitted from the Put Watch JSON body
+
+#### Scenario: transform omitted when not set on update
+
+- GIVEN `transform` is not configured
+- WHEN update builds the request body for an existing watch
+- THEN the Put Watch JSON body SHALL include `transform` with an empty JSON object
+
+### Requirement: Defaulted watch attributes (REQ-028)
+
+When `active` is omitted from configuration, the resource SHALL behave as if `active` were `true`. When `throttle_period_in_millis` is omitted, the resource SHALL submit the default throttle period and SHALL store the refreshed value in state. When `input`, `condition`, `actions`, or `metadata` are omitted, the resource SHALL use their documented JSON defaults during create and update.
+
+#### Scenario: active omitted from configuration
+
+- GIVEN a watch configuration that omits `active`
+- WHEN the resource is created and refreshed
+- THEN the `active` attribute in state SHALL be `true`
+
+#### Scenario: throttle period omitted from configuration
+
+- GIVEN a watch configuration that omits `throttle_period_in_millis`
+- WHEN the resource is created and refreshed
+- THEN the `throttle_period_in_millis` attribute in state SHALL be `5000`
 
 ### Requirement: JSON field mapping — read/state (REQ-023–REQ-027)
+On read, the resource SHALL marshal the API response fields `trigger`, `input`, `condition`, `actions`, and `metadata` back into normalized JSON strings and store them in state. When the API response includes a non-nil `transform`, the resource SHALL marshal it to a normalized JSON string and store it in state. When the API response has a nil `transform`, the resource SHALL clear `transform` from state so the Terraform state reflects the remote watch. The resource SHALL store `watch_id` and `active` (from `watch.status.state.active`) directly from the API response. The resource SHALL store `throttle_period_in_millis` from the API response. JSON fields SHALL normalize semantically equivalent JSON so formatting-only changes do not create perpetual diffs.
 
-On read, the resource SHALL marshal the API response fields `trigger`, `input`, `condition`, `actions`, and `metadata` back into JSON strings and store them in state. When the API response includes a non-nil `transform`, the resource SHALL marshal it to a JSON string and store it in state; when the API response has a nil `transform`, the resource SHALL NOT overwrite the `transform` state attribute. The resource SHALL store `watch_id` and `active` (from `watch.status.state.active`) directly from the API response. The resource SHALL store `throttle_period_in_millis` from the API response. JSON fields SHALL use `DiffSuppressFunc` (`tfsdkutils.DiffJSONSuppress`) to suppress semantically equivalent JSON diffs.
-
-#### Scenario: transform nil in API response
-
-- GIVEN the API response has no transform field
-- WHEN read runs
-- THEN `transform` in state SHALL not be overwritten (remains as previously stored)
+#### Scenario: transform removed from the remote watch
+- **GIVEN** the watch previously had a `transform` stored in Terraform state
+- **WHEN** read runs and the API response has no `transform` field
+- **THEN** the `transform` attribute SHALL be cleared from state
 
 #### Scenario: active synced from watch status
+- **GIVEN** the watch is deactivated on the cluster
+- **WHEN** read runs
+- **THEN** `active` in state SHALL reflect `watch.status.state.active` from the API response
 
-- GIVEN the watch is deactivated on the cluster
-- WHEN read runs
-- THEN `active` in state SHALL reflect `watch.status.state.active` from the API response
+### Requirement: SDK-to-Framework watch state compatibility (REQ-028)
+After the watch resource is migrated to the Terraform Plugin Framework, the resource SHALL continue to manage state created by the last SDK-backed provider release without requiring import, recreation, or changes to the configured resource type. The migrated resource SHALL preserve the existing composite `id` format, `watch_id` semantics, and import identifier format.
+
+#### Scenario: upgrade an SDK-managed watch
+- **GIVEN** a watch created by the last SDK-backed release of the provider
+- **WHEN** Terraform refreshes and plans the resource with the Plugin Framework implementation
+- **THEN** the resource SHALL keep the same `id` and `watch_id` without forcing replacement
+
