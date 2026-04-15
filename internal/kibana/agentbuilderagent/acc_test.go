@@ -36,7 +36,8 @@ const (
 )
 
 var (
-	minKibanaAgentBuilderAPIVersion = version.Must(version.NewVersion("9.3.0"))
+	minKibanaAgentBuilderAPIVersion         = version.Must(version.NewVersion("9.3.0"))
+	minKibanaAgentBuilderWorkflowAPIVersion = version.Must(version.NewVersion("9.4.0-SNAPSHOT"))
 )
 
 func TestAccResourceAgentBuilderAgent(t *testing.T) {
@@ -173,7 +174,7 @@ func TestAccDataSourceKibanaAgentBuilderAgentWithDependencies(t *testing.T) {
 	workflowToolID := "test-wf-tool-" + uuid.New().String()[:8]
 
 	resource.Test(t, resource.TestCase{
-		PreCheck: func() { acctest.PreCheckWithWorkflowsEnabled(t, minKibanaAgentBuilderAPIVersion) },
+		PreCheck: func() { acctest.PreCheckWithWorkflowsEnabled(t, minKibanaAgentBuilderWorkflowAPIVersion) },
 		Steps: []resource.TestStep{
 			{
 				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(minKibanaAgentBuilderAPIVersion),
@@ -201,7 +202,7 @@ func TestAccDataSourceKibanaAgentBuilderAgentWorkflowTool(t *testing.T) {
 	workflowToolID := "test-wf-tool-" + uuid.New().String()[:8]
 
 	resource.Test(t, resource.TestCase{
-		PreCheck: func() { acctest.PreCheckWithWorkflowsEnabled(t, minKibanaAgentBuilderAPIVersion) },
+		PreCheck: func() { acctest.PreCheckWithWorkflowsEnabled(t, minKibanaAgentBuilderWorkflowAPIVersion) },
 		Steps: []resource.TestStep{
 			{
 				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(minKibanaAgentBuilderAPIVersion),
