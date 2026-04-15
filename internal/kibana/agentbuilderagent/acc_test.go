@@ -18,16 +18,10 @@
 package agentbuilderagent_test
 
 import (
-	"bytes"
-	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"testing"
 
 	"github.com/elastic/terraform-provider-elasticstack/internal/acctest"
-	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
 	"github.com/elastic/terraform-provider-elasticstack/internal/versionutils"
 	"github.com/google/uuid"
 	"github.com/hashicorp/go-version"
@@ -45,62 +39,12 @@ var (
 	minKibanaAgentBuilderAPIVersion = version.Must(version.NewVersion("9.3.0"))
 )
 
-func preCheckWithWorkflowsEnabled(t *testing.T) {
-	acctest.PreCheck(t)
-
-	client, err := clients.NewAcceptanceTestingClient()
-	if err != nil {
-		t.Fatalf("Failed to create API client: %v", err)
-	}
-
-	serverVersion, diags := client.ServerVersion(context.Background())
-	if diags.HasError() {
-		t.Fatalf("Failed to get server version: %v", diags)
-	}
-	if serverVersion.LessThan(minKibanaAgentBuilderAPIVersion) {
-		t.Skipf("Skipping test: server version %s is below minimum %s", serverVersion, minKibanaAgentBuilderAPIVersion)
-	}
-
-	kibanaClient, err := client.GetKibanaOapiClient()
-	if err != nil {
-		t.Fatalf("Failed to get Kibana client: %v", err)
-	}
-
-	settingsURL := fmt.Sprintf("%s/internal/kibana/settings/workflows:ui:enabled", kibanaClient.URL)
-	body := map[string]any{
-		"value": true,
-	}
-	bodyBytes, err := json.Marshal(body)
-	if err != nil {
-		t.Fatalf("Failed to marshal body: %v", err)
-	}
-
-	req, err := http.NewRequestWithContext(context.Background(), "POST", settingsURL, bytes.NewReader(bodyBytes))
-	if err != nil {
-		t.Fatalf("Failed to create POST request: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("kbn-xsrf", "true")
-	req.Header.Set("x-elastic-internal-origin", "Kibana")
-
-	resp, err := kibanaClient.HTTP.Do(req)
-	if err != nil {
-		t.Fatalf("Failed to enable workflows: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		respBody, _ := io.ReadAll(resp.Body)
-		t.Fatalf("Failed to enable workflows (status %d): %s. Make sure workflows are enabled in kibana.yml with 'xpack.aiAssistant.workflows.enabled: true'", resp.StatusCode, string(respBody))
-	}
-}
-
 func TestAccResourceAgentBuilderAgent(t *testing.T) {
 	agentID := "test-agent-" + uuid.New().String()[:8]
 	resourceID := testResourceID
 
 	resource.Test(t, resource.TestCase{
-		PreCheck: func() { preCheckWithWorkflowsEnabled(t) },
+		PreCheck: func() { acctest.PreCheckWithWorkflowsEnabled(t, minKibanaAgentBuilderAPIVersion) },
 		Steps: []resource.TestStep{
 			{
 				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(minKibanaAgentBuilderAPIVersion),
@@ -162,7 +106,7 @@ func TestAccResourceAgentBuilderAgentSpace(t *testing.T) {
 	resourceID := testResourceID
 
 	resource.Test(t, resource.TestCase{
-		PreCheck: func() { preCheckWithWorkflowsEnabled(t) },
+		PreCheck: func() { acctest.PreCheckWithWorkflowsEnabled(t, minKibanaAgentBuilderAPIVersion) },
 		Steps: []resource.TestStep{
 			{
 				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(minKibanaAgentBuilderAPIVersion),
@@ -202,7 +146,7 @@ func TestAccDataSourceKibanaAgentBuilderAgent(t *testing.T) {
 	agentID := "test-agent-" + uuid.New().String()[:8]
 
 	resource.Test(t, resource.TestCase{
-		PreCheck: func() { preCheckWithWorkflowsEnabled(t) },
+		PreCheck: func() { acctest.PreCheckWithWorkflowsEnabled(t, minKibanaAgentBuilderAPIVersion) },
 		Steps: []resource.TestStep{
 			{
 				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(minKibanaAgentBuilderAPIVersion),
@@ -229,7 +173,7 @@ func TestAccDataSourceKibanaAgentBuilderAgentWithDependencies(t *testing.T) {
 	workflowToolID := "test-wf-tool-" + uuid.New().String()[:8]
 
 	resource.Test(t, resource.TestCase{
-		PreCheck: func() { preCheckWithWorkflowsEnabled(t) },
+		PreCheck: func() { acctest.PreCheckWithWorkflowsEnabled(t, minKibanaAgentBuilderAPIVersion) },
 		Steps: []resource.TestStep{
 			{
 				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(minKibanaAgentBuilderAPIVersion),
@@ -257,7 +201,7 @@ func TestAccDataSourceKibanaAgentBuilderAgentWorkflowTool(t *testing.T) {
 	workflowToolID := "test-wf-tool-" + uuid.New().String()[:8]
 
 	resource.Test(t, resource.TestCase{
-		PreCheck: func() { preCheckWithWorkflowsEnabled(t) },
+		PreCheck: func() { acctest.PreCheckWithWorkflowsEnabled(t, minKibanaAgentBuilderAPIVersion) },
 		Steps: []resource.TestStep{
 			{
 				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(minKibanaAgentBuilderAPIVersion),
