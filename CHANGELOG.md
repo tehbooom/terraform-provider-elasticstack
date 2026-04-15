@@ -2,6 +2,7 @@
 
 ### Changes
 
+- Add `elasticstack_kibana_agentbuilder_agent` resource and data source ([#2295](https://github.com/elastic/terraform-provider-elasticstack/pull/2295))
 - Add `elasticstack_kibana_agentbuilder_tool` resource and data source ([#2111](https://github.com/elastic/terraform-provider-elasticstack/pull/2111))
 - Fix state consistency with semantic text types in `elasticstack_elasticsearch_index` ([#2112](https://github.com/elastic/terraform-provider-elasticstack/pull/2112))
 - Add `elasticstack_elasticsearch_inference_endpoint` resource. ([#1955](https://github.com/elastic/terraform-provider-elasticstack/pull/1955))
