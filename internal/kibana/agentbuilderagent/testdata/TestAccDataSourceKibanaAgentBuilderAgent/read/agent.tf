@@ -14,7 +14,6 @@ resource "elasticstack_kibana_agentbuilder_agent" "test" {
   instructions = "You are a helpful assistant."
 }
 
-data "elasticstack_kibana_agentbuilder_export_agent" "test" {
-  id                   = elasticstack_kibana_agentbuilder_agent.test.agent_id
-  include_dependencies = false
+data "elasticstack_kibana_agentbuilder_agent" "test" {
+  agent_id = elasticstack_kibana_agentbuilder_agent.test.agent_id
 }

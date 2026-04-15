@@ -23,6 +23,7 @@ import (
 	"github.com/elastic/terraform-provider-elasticstack/generated/kbapi"
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
 	"github.com/elastic/terraform-provider-elasticstack/internal/models"
+	"github.com/elastic/terraform-provider-elasticstack/internal/utils/customtypes"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
@@ -38,6 +39,82 @@ type agentModel struct {
 	Labels       types.List   `tfsdk:"labels"` // []string
 	Tools        types.List   `tfsdk:"tools"`  // []string
 	Instructions types.String `tfsdk:"instructions"`
+}
+
+type agentDataSourceModel struct {
+	ID                  types.String `tfsdk:"id"`
+	AgentID             types.String `tfsdk:"agent_id"`
+	SpaceID             types.String `tfsdk:"space_id"`
+	IncludeDependencies types.Bool   `tfsdk:"include_dependencies"`
+	Name                types.String `tfsdk:"name"`
+	Description         types.String `tfsdk:"description"`
+	AvatarColor         types.String `tfsdk:"avatar_color"`
+	AvatarSymbol        types.String `tfsdk:"avatar_symbol"`
+	Labels              types.Set    `tfsdk:"labels"`
+	Tools               []toolModel  `tfsdk:"tools"`
+	Instructions        types.String `tfsdk:"instructions"`
+}
+
+type toolModel struct {
+	ID                        types.String                    `tfsdk:"id"`
+	SpaceID                   types.String                    `tfsdk:"space_id"`
+	ToolID                    types.String                    `tfsdk:"tool_id"`
+	Type                      types.String                    `tfsdk:"type"`
+	Description               types.String                    `tfsdk:"description"`
+	Tags                      types.Set                       `tfsdk:"tags"`
+	ReadOnly                  types.Bool                      `tfsdk:"readonly"`
+	Configuration             types.String                    `tfsdk:"configuration"`
+	WorkflowID                types.String                    `tfsdk:"workflow_id"`
+	WorkflowConfigurationYaml customtypes.NormalizedYamlValue `tfsdk:"workflow_configuration_yaml"`
+}
+
+func (model *agentDataSourceModel) populateFromAPI(ctx context.Context, spaceID string, data *models.Agent) diag.Diagnostics {
+	if data == nil {
+		return nil
+	}
+
+	var diags diag.Diagnostics
+
+	model.ID = types.StringValue((&clients.CompositeID{ClusterID: spaceID, ResourceID: data.ID}).String())
+	model.AgentID = types.StringValue(data.ID)
+	model.SpaceID = types.StringValue(spaceID)
+	model.Name = types.StringValue(data.Name)
+
+	if data.Description != nil && *data.Description != "" {
+		model.Description = types.StringValue(*data.Description)
+	} else {
+		model.Description = types.StringNull()
+	}
+
+	if data.AvatarColor != nil && *data.AvatarColor != "" {
+		model.AvatarColor = types.StringValue(*data.AvatarColor)
+	} else {
+		model.AvatarColor = types.StringNull()
+	}
+
+	if data.AvatarSymbol != nil && *data.AvatarSymbol != "" {
+		model.AvatarSymbol = types.StringValue(*data.AvatarSymbol)
+	} else {
+		model.AvatarSymbol = types.StringNull()
+	}
+
+	cfg := data.Configuration
+
+	if cfg.Instructions != nil && *cfg.Instructions != "" {
+		model.Instructions = types.StringValue(*cfg.Instructions)
+	} else {
+		model.Instructions = types.StringNull()
+	}
+
+	if len(data.Labels) > 0 {
+		labels, d := types.SetValueFrom(ctx, types.StringType, data.Labels)
+		diags.Append(d...)
+		model.Labels = labels
+	} else {
+		model.Labels = types.SetNull(types.StringType)
+	}
+
+	return diags
 }
 
 func (model *agentModel) populateFromAPI(ctx context.Context, spaceID string, data *models.Agent) diag.Diagnostics {

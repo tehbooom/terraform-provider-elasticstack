@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-package agent
+package agentbuilderagent
 
 import (
 	"context"
@@ -27,9 +27,8 @@ import (
 
 // Ensure the implementation satisfies the expected interfaces.
 var (
-	_                               datasource.DataSource              = &DataSource{}
-	_                               datasource.DataSourceWithConfigure = &DataSource{}
-	minKibanaAgentBuilderAPIVersion                                    = version.Must(version.NewVersion("9.3.0"))
+	_ datasource.DataSource              = &DataSource{}
+	_ datasource.DataSourceWithConfigure = &DataSource{}
 	// workflow_ids, skill_ids, and plugin_ids on agents require 9.4+
 	minVersionAdvancedAgentConfig = version.Must(version.NewVersion("9.4.0-SNAPSHOT"))
 )
@@ -46,7 +45,7 @@ type DataSource struct {
 
 // Metadata returns the data source type name.
 func (d *DataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
-	resp.TypeName = req.ProviderTypeName + "_kibana_agentbuilder_export_agent"
+	resp.TypeName = req.ProviderTypeName + "_kibana_agentbuilder_agent"
 }
 
 // Configure adds the provider configured client to the data source.

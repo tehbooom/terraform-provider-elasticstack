@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-package agent
+package agentbuilderagent
 
 import (
 	"context"
@@ -35,7 +35,7 @@ import (
 
 // Read refreshes the Terraform state with the latest data.
 func (d *DataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
-	var config dataSourceModel
+	var config agentDataSourceModel
 
 	diags := req.Config.Get(ctx, &config)
 	resp.Diagnostics.Append(diags...)
@@ -62,20 +62,37 @@ func (d *DataSource) Read(ctx context.Context, req datasource.ReadRequest, resp 
 	}
 	supportsAdvancedConfig := !serverVersion.LessThan(minVersionAdvancedAgentConfig)
 
-	oapiClient, err := d.client.GetKibanaOapiClient()
+	if !typeutils.IsKnown(config.AgentID) || config.AgentID.ValueString() == "" {
+		resp.Diagnostics.AddError("Invalid configuration", "agent_id must be set.")
+		return
+	}
+
+	// Datasource BoolAttribute has no schema Default in this framework version; treat unset as false.
+	includeDeps := false
+	if typeutils.IsKnown(config.IncludeDependencies) {
+		includeDeps = config.IncludeDependencies.ValueBool()
+	}
+
+	client, err := d.client.GetKibanaOapiClient()
 	if err != nil {
 		resp.Diagnostics.AddError("unable to get Kibana client", err.Error())
 		return
 	}
 
 	spaceID := "default"
-	if typeutils.IsKnown(config.SpaceID) {
+	if typeutils.IsKnown(config.SpaceID) && config.SpaceID.ValueString() != "" {
 		spaceID = config.SpaceID.ValueString()
 	}
 
-	agentID := config.ID.ValueString()
+	agentID := config.AgentID.ValueString()
+	if compID, idDiags := clients.CompositeIDFromStrFw(agentID); !idDiags.HasError() {
+		agentID = compID.ResourceID
+		if !typeutils.IsKnown(config.SpaceID) || config.SpaceID.ValueString() == "" {
+			spaceID = compID.ClusterID
+		}
+	}
 
-	agent, agentDiags := kibanaoapi.GetAgent(ctx, oapiClient, spaceID, agentID)
+	agent, agentDiags := kibanaoapi.GetAgent(ctx, client, spaceID, agentID)
 	resp.Diagnostics.Append(agentDiags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -85,39 +102,29 @@ func (d *DataSource) Read(ctx context.Context, req datasource.ReadRequest, resp 
 		return
 	}
 
-	agentJSON, err := json.Marshal(agent)
-	if err != nil {
-		resp.Diagnostics.AddError("JSON marshaling failed", fmt.Sprintf("Unable to marshal agent to JSON: %v", err))
+	diags = config.populateFromAPI(ctx, spaceID, agent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	compositeID := &clients.CompositeID{ClusterID: spaceID, ResourceID: agentID}
-
-	var state dataSourceModel
-	state.ID = types.StringValue(compositeID.String())
-	state.SpaceID = types.StringValue(spaceID)
-	state.Agent = types.StringValue(string(agentJSON))
-	state.IncludeDependencies = config.IncludeDependencies
-	state.Tools = []toolModel{}
-
-	includeDeps := typeutils.IsKnown(config.IncludeDependencies) && config.IncludeDependencies.ValueBool()
-
-	if includeDeps {
-		// Collect all tool IDs from the agent configuration.
-		toolIDSet := make(map[string]struct{})
-		for _, toolsConfig := range agent.Configuration.Tools {
-			for _, id := range toolsConfig.ToolIDs {
-				toolIDSet[id] = struct{}{}
-			}
+	toolIDs := agentToolIDsInOrder(agent)
+	switch {
+	case len(toolIDs) == 0:
+		config.Tools = nil
+	case !includeDeps:
+		config.Tools = make([]toolModel, 0, len(toolIDs))
+		for _, tid := range toolIDs {
+			config.Tools = append(config.Tools, toolModelFromToolRef(spaceID, tid))
 		}
-
+	default:
 		// Fetch each tool and track workflow IDs for workflow-type tools.
 		// These are "tool-embedded" workflows whose YAML is surfaced on the tool itself.
 		toolWorkflowIDSet := make(map[string]struct{})
 		toolsByID := make(map[string]*models.Tool)
 
-		for toolID := range toolIDSet {
-			tool, toolDiags := kibanaoapi.GetTool(ctx, oapiClient, spaceID, toolID)
+		for _, toolID := range toolIDs {
+			tool, toolDiags := kibanaoapi.GetTool(ctx, client, spaceID, toolID)
 			resp.Diagnostics.Append(toolDiags...)
 			if resp.Diagnostics.HasError() {
 				return
@@ -149,7 +156,7 @@ func (d *DataSource) Read(ctx context.Context, req datasource.ReadRequest, resp 
 			return
 		}
 		for workflowID := range toolWorkflowIDSet {
-			workflow, wDiags := kibanaoapi.GetWorkflow(ctx, oapiClient, spaceID, workflowID)
+			workflow, wDiags := kibanaoapi.GetWorkflow(ctx, client, spaceID, workflowID)
 			resp.Diagnostics.Append(wDiags...)
 			if resp.Diagnostics.HasError() {
 				return
@@ -159,28 +166,74 @@ func (d *DataSource) Read(ctx context.Context, req datasource.ReadRequest, resp 
 			}
 		}
 
-		// Convert tools to state models.
-		for _, tool := range toolsByID {
-			tm, tmDiags := toolModelFromAPI(ctx, tool, workflowsByID)
+		// Convert tools to state models (same order as on the agent).
+		config.Tools = make([]toolModel, 0, len(toolIDs))
+		for _, toolID := range toolIDs {
+			tool := toolsByID[toolID]
+			if tool == nil {
+				continue
+			}
+			tm, tmDiags := toolModelFromAPI(ctx, spaceID, tool, workflowsByID)
 			resp.Diagnostics.Append(tmDiags...)
 			if resp.Diagnostics.HasError() {
 				return
 			}
-			state.Tools = append(state.Tools, tm)
+			config.Tools = append(config.Tools, tm)
 		}
-
 	}
 
-	diags = resp.State.Set(ctx, &state)
+	config.IncludeDependencies = types.BoolValue(includeDeps)
+
+	diags = resp.State.Set(ctx, &config)
 	resp.Diagnostics.Append(diags...)
 }
 
+// agentToolIDsInOrder returns unique tool IDs from the agent configuration, preserving first-seen order.
+func agentToolIDsInOrder(agent *models.Agent) []string {
+	if agent == nil {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	var out []string
+	for _, tc := range agent.Configuration.Tools {
+		for _, id := range tc.ToolIDs {
+			if id == "" {
+				continue
+			}
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// toolModelFromToolRef builds a minimal tool row (composite id, space, tool id) without calling the tools API.
+func toolModelFromToolRef(spaceID, toolID string) toolModel {
+	return toolModel{
+		ID:                        types.StringValue((&clients.CompositeID{ClusterID: spaceID, ResourceID: toolID}).String()),
+		SpaceID:                   types.StringValue(spaceID),
+		ToolID:                    types.StringValue(toolID),
+		Type:                      types.StringNull(),
+		Description:               types.StringNull(),
+		Tags:                      types.SetNull(types.StringType),
+		ReadOnly:                  types.BoolNull(),
+		Configuration:             types.StringNull(),
+		WorkflowID:                types.StringNull(),
+		WorkflowConfigurationYaml: customtypes.NewNormalizedYamlNull(),
+	}
+}
+
 // toolModelFromAPI converts a models.Tool (and optionally its workflow) into a toolModel.
-func toolModelFromAPI(ctx context.Context, tool *models.Tool, workflowsByID map[string]*models.Workflow) (toolModel, diag.Diagnostics) {
+func toolModelFromAPI(ctx context.Context, spaceID string, tool *models.Tool, workflowsByID map[string]*models.Workflow) (toolModel, diag.Diagnostics) {
 	var tm toolModel
 	var diags diag.Diagnostics
 
-	tm.ID = types.StringValue(tool.ID)
+	tm.ID = types.StringValue((&clients.CompositeID{ClusterID: spaceID, ResourceID: tool.ID}).String())
+	tm.SpaceID = types.StringValue(spaceID)
+	tm.ToolID = types.StringValue(tool.ID)
 	tm.Type = types.StringValue(tool.Type)
 
 	if tool.Description != nil {
@@ -190,11 +243,11 @@ func toolModelFromAPI(ctx context.Context, tool *models.Tool, workflowsByID map[
 	}
 
 	if len(tool.Tags) > 0 {
-		tags, tagDiags := types.ListValueFrom(ctx, types.StringType, tool.Tags)
+		tags, tagDiags := types.SetValueFrom(ctx, types.StringType, tool.Tags)
 		diags.Append(tagDiags...)
 		tm.Tags = tags
 	} else {
-		tm.Tags = types.ListNull(types.StringType)
+		tm.Tags = types.SetNull(types.StringType)
 	}
 
 	tm.ReadOnly = types.BoolValue(tool.ReadOnly)

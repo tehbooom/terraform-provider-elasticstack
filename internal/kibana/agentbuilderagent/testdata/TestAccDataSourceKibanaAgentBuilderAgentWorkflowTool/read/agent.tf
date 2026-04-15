@@ -3,11 +3,6 @@ variable "agent_id" {
   type        = string
 }
 
-variable "esql_tool_id" {
-  description = "The ES|QL tool ID"
-  type        = string
-}
-
 variable "workflow_tool_id" {
   description = "The workflow tool ID"
   type        = string
@@ -36,17 +31,6 @@ steps:
 EOT
 }
 
-resource "elasticstack_kibana_agentbuilder_tool" "esql" {
-  tool_id     = var.esql_tool_id
-  type        = "esql"
-  description = "Test ES|QL tool"
-  tags        = ["test", "esql"]
-  configuration = jsonencode({
-    query  = "FROM logs-* | LIMIT 10"
-    params = {}
-  })
-}
-
 resource "elasticstack_kibana_agentbuilder_tool" "workflow" {
   tool_id     = var.workflow_tool_id
   type        = "workflow"
@@ -58,13 +42,12 @@ resource "elasticstack_kibana_agentbuilder_tool" "workflow" {
 
 resource "elasticstack_kibana_agentbuilder_agent" "test" {
   agent_id     = var.agent_id
-  name         = "Test Agent With Tools"
-  description  = "Agent with esql and workflow tools"
-  instructions = "Use the available tools to help answer questions."
-  tools        = [elasticstack_kibana_agentbuilder_tool.esql.tool_id, elasticstack_kibana_agentbuilder_tool.workflow.tool_id]
+  name         = "Agent With Workflow Tool"
+  instructions = "Use the workflow tool."
+  tools        = [elasticstack_kibana_agentbuilder_tool.workflow.tool_id]
 }
 
-data "elasticstack_kibana_agentbuilder_export_agent" "test" {
-  id                   = elasticstack_kibana_agentbuilder_agent.test.agent_id
+data "elasticstack_kibana_agentbuilder_agent" "test" {
+  agent_id             = elasticstack_kibana_agentbuilder_agent.test.agent_id
   include_dependencies = true
 }
