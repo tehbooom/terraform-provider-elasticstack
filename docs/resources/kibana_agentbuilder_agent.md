@@ -3,12 +3,12 @@
 page_title: "elasticstack_kibana_agentbuilder_agent Resource - terraform-provider-elasticstack"
 subcategory: "Kibana"
 description: |-
-  Manages Kibana Agent Builder agents. See the Agent Builder API documentation https://www.elastic.co/guide/en/kibana/current/agent-builder-api.html for more information.
+  Manages Kibana Agent Builder agents. See the Agent Builder API documentation https://www.elastic.co/docs/api/doc/kibana/group/endpoint-agent-builder for more information.
 ---
 
 # elasticstack_kibana_agentbuilder_agent (Resource)
 
-Manages Kibana Agent Builder agents. See the [Agent Builder API documentation](https://www.elastic.co/guide/en/kibana/current/agent-builder-api.html) for more information.
+Manages Kibana Agent Builder agents. See the [Agent Builder API documentation](https://www.elastic.co/docs/api/doc/kibana/group/endpoint-agent-builder) for more information.
 
 ## Example Usage
 
