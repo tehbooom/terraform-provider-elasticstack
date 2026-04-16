@@ -37,8 +37,8 @@ type agentModel struct {
 	Description      types.String `tfsdk:"description"`
 	AvatarColor      types.String `tfsdk:"avatar_color"`
 	AvatarSymbol     types.String `tfsdk:"avatar_symbol"`
-	Labels           types.List   `tfsdk:"labels"` // []string
-	Tools            types.List   `tfsdk:"tools"`  // []string
+	Labels           types.Set    `tfsdk:"labels"` // []string
+	Tools            types.Set    `tfsdk:"tools"`  // []string
 	Instructions     types.String `tfsdk:"instructions"`
 }
 
@@ -157,24 +157,24 @@ func (model *agentModel) populateFromAPI(ctx context.Context, spaceID string, da
 		model.Instructions = types.StringNull()
 	}
 
-	diags.Append(populateList(ctx, data.Labels, &model.Labels)...)
+	diags.Append(populateSet(ctx, data.Labels, &model.Labels)...)
 
 	var toolIDs []string
 	if len(cfg.Tools) > 0 {
 		toolIDs = cfg.Tools[0].ToolIDs
 	}
-	diags.Append(populateList(ctx, toolIDs, &model.Tools)...)
+	diags.Append(populateSet(ctx, toolIDs, &model.Tools)...)
 
 	return diags
 }
 
-func populateList(ctx context.Context, src []string, dst *types.List) diag.Diagnostics {
+func populateSet(ctx context.Context, src []string, dst *types.Set) diag.Diagnostics {
 	if len(src) > 0 {
-		v, d := types.ListValueFrom(ctx, types.StringType, src)
+		v, d := types.SetValueFrom(ctx, types.StringType, src)
 		*dst = v
 		return d
 	}
-	*dst = types.ListNull(types.StringType)
+	*dst = types.SetNull(types.StringType)
 	return nil
 }
 
@@ -197,13 +197,13 @@ func (model agentModel) toAPICreateModel(ctx context.Context) (kbapi.PostAgentBu
 		body.Configuration.Instructions = model.Instructions.ValueStringPointer()
 	}
 
-	toolIDs, d := listToStrings(ctx, model.Tools)
+	toolIDs, d := setToStrings(ctx, model.Tools)
 	diags.Append(d...)
 	body.Configuration.Tools = []struct {
 		ToolIds []string `json:"tool_ids"` //nolint:revive
 	}{{ToolIds: toolIDs}}
 
-	labels, d := listToStrings(ctx, model.Labels)
+	labels, d := setToStrings(ctx, model.Labels)
 	diags.Append(d...)
 	if len(labels) > 0 {
 		body.Labels = &labels
@@ -230,7 +230,7 @@ func (model agentModel) toAPIUpdateModel(ctx context.Context) (kbapi.PutAgentBui
 		body.AvatarSymbol = model.AvatarSymbol.ValueStringPointer()
 	}
 
-	toolIDs, d := listToStrings(ctx, model.Tools)
+	toolIDs, d := setToStrings(ctx, model.Tools)
 	diags.Append(d...)
 	tools := []struct {
 		ToolIds []string `json:"tool_ids"` //nolint:revive
@@ -255,7 +255,7 @@ func (model agentModel) toAPIUpdateModel(ctx context.Context) (kbapi.PutAgentBui
 		Tools:        &tools,
 	}
 
-	labels, d := listToStrings(ctx, model.Labels)
+	labels, d := setToStrings(ctx, model.Labels)
 	diags.Append(d...)
 	if len(labels) > 0 {
 		body.Labels = &labels
@@ -264,11 +264,11 @@ func (model agentModel) toAPIUpdateModel(ctx context.Context) (kbapi.PutAgentBui
 	return body, diags
 }
 
-func listToStrings(ctx context.Context, list types.List) ([]string, diag.Diagnostics) {
-	if list.IsNull() || list.IsUnknown() {
+func setToStrings(ctx context.Context, set types.Set) ([]string, diag.Diagnostics) {
+	if set.IsNull() || set.IsUnknown() {
 		return []string{}, nil
 	}
 	var out []string
-	d := list.ElementsAs(ctx, &out, false)
+	d := set.ElementsAs(ctx, &out, false)
 	return out, d
 }
