@@ -19,8 +19,6 @@ package clients
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -36,8 +34,6 @@ import (
 	"github.com/elastic/terraform-provider-elasticstack/internal/models"
 	"github.com/hashicorp/go-version"
 	fwdiags "github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/logging"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -85,7 +81,12 @@ func (c *CompositeID) String() string {
 	return fmt.Sprintf("%s/%s", c.ClusterID, c.ResourceID)
 }
 
-type APIClient struct {
+// apiClient is the internal broad client that holds all configured service
+// clients built from the provider configuration block. It is unexported;
+// external code must use scoped clients (KibanaScopedClient,
+// ElasticsearchScopedClient) obtained through ProviderClientFactory or the
+// acceptance-testing helper constructors.
+type apiClient struct {
 	elasticsearch            *elasticsearch.Client
 	elasticsearchClusterInfo *models.ClusterInfo
 	kibana                   *kibana.Client
@@ -106,7 +107,7 @@ func NewAPIClientFuncFromSDK(version string) func(context.Context, *schema.Resou
 	}
 }
 
-func NewAcceptanceTestingClient() (*APIClient, error) {
+func newAcceptanceTestingClient() (*apiClient, error) {
 	version := "tf-acceptance-testing"
 	cfg := config.NewFromEnv(version)
 
@@ -132,7 +133,7 @@ func NewAcceptanceTestingClient() (*APIClient, error) {
 		return nil, err
 	}
 
-	return &APIClient{
+	return &apiClient{
 			elasticsearch: es,
 			kibana:        kib,
 			kibanaOapi:    kibOapi,
@@ -144,7 +145,7 @@ func NewAcceptanceTestingClient() (*APIClient, error) {
 		nil
 }
 
-func NewAPIClientFromFramework(ctx context.Context, cfg config.ProviderConfiguration, version string) (*APIClient, fwdiags.Diagnostics) {
+func newAPIClientFromFramework(ctx context.Context, cfg config.ProviderConfiguration, version string) (*apiClient, fwdiags.Diagnostics) {
 	clientCfg, diags := config.NewFromFramework(ctx, cfg, version)
 	if diags.HasError() {
 		return nil, diags
@@ -160,453 +161,8 @@ func NewAPIClientFromFramework(ctx context.Context, cfg config.ProviderConfigura
 	return client, nil
 }
 
-func ConvertProviderData(providerData any) (*APIClient, fwdiags.Diagnostics) {
-	var diags fwdiags.Diagnostics
-
-	if providerData == nil {
-		return nil, diags
-	}
-
-	// Support the new factory injection path: extract the default client.
-	if factory, ok := providerData.(*ProviderClientFactory); ok {
-		if factory == nil {
-			diags.AddError(
-				"Unconfigured Client Factory",
-				"Expected configured client factory. Please report this issue to the provider developers.",
-			)
-			return nil, diags
-		}
-		client := factory.GetDefaultClient()
-		if client == nil {
-			diags.AddError(
-				"Unconfigured Client",
-				"Expected configured client. Please report this issue to the provider developers.",
-			)
-			return nil, diags
-		}
-		return client, diags
-	}
-
-	client, ok := providerData.(*APIClient)
-	if !ok {
-		diags.AddError(
-			"Unexpected Provider Data",
-			fmt.Sprintf("Expected *ProviderClientFactory or *APIClient, got: %T. Please report this issue to the provider developers.", providerData),
-		)
-
-		return nil, diags
-	}
-	if client == nil {
-		diags.AddError(
-			"Unconfigured Client",
-			"Expected configured client. Please report this issue to the provider developers.",
-		)
-	}
-	return client, diags
-}
-
-func MaybeNewAPIClientFromFrameworkResource(ctx context.Context, esConnList types.List, defaultClient *APIClient) (*APIClient, fwdiags.Diagnostics) {
-	var esConns []config.ElasticsearchConnection
-	if diags := esConnList.ElementsAs(ctx, &esConns, true); diags.HasError() {
-		return nil, diags
-	}
-
-	if len(esConns) == 0 {
-		return defaultClient, nil
-	}
-
-	cfg, diags := config.NewFromFramework(ctx, config.ProviderConfiguration{Elasticsearch: esConns}, defaultClient.version)
-	if diags.HasError() {
-		return nil, diags
-	}
-
-	esClient, err := buildEsClient(cfg)
-	if err != nil {
-		return nil, fwdiags.Diagnostics{fwdiags.NewErrorDiagnostic(err.Error(), err.Error())}
-	}
-
-	return &APIClient{
-		elasticsearch: esClient,
-		kibana:        defaultClient.kibana,
-		fleet:         defaultClient.fleet,
-		version:       defaultClient.version,
-	}, diags
-}
-
-// MaybeNewKibanaAPIClientFromFrameworkResource resolves a scoped *APIClient
-// from an entity-local kibana_connection block. If the block is absent the
-// default client is returned unchanged. If the block is configured a new
-// *APIClient is returned with the Kibana legacy, Kibana OpenAPI, SLO, and
-// Fleet clients rebuilt from the scoped connection. The resulting client does
-// not carry a provider-level Elasticsearch client so that version and identity
-// checks resolve against the scoped Kibana connection.
-func MaybeNewKibanaAPIClientFromFrameworkResource(ctx context.Context, kibConnList types.List, defaultClient *APIClient) (*APIClient, fwdiags.Diagnostics) {
-	var kibConns []config.KibanaConnection
-	if diags := kibConnList.ElementsAs(ctx, &kibConns, true); diags.HasError() {
-		return nil, diags
-	}
-
-	if len(kibConns) == 0 {
-		return defaultClient, nil
-	}
-
-	cfg, diags := config.NewFromFrameworkKibanaResource(ctx, kibConns, defaultClient.version)
-	if diags.HasError() {
-		return nil, diags
-	}
-
-	kibanaClient, err := buildKibanaClient(*cfg)
-	if err != nil {
-		return nil, fwdiags.Diagnostics{fwdiags.NewErrorDiagnostic("Failed to build Kibana client", err.Error())}
-	}
-
-	kibanaOapiClient, err := buildKibanaOapiClient(*cfg)
-	if err != nil {
-		return nil, fwdiags.Diagnostics{fwdiags.NewErrorDiagnostic("Failed to build Kibana OpenAPI client", err.Error())}
-	}
-
-	fleetClient, err := buildFleetClient(*cfg)
-	if err != nil {
-		return nil, fwdiags.Diagnostics{fwdiags.NewErrorDiagnostic("Failed to build Fleet client", err.Error())}
-	}
-
-	var sloAPI slo.SloAPI
-	if kibanaClient != nil {
-		kibanaHTTPClient := kibanaClient.Client.GetClient()
-		sloAPI = buildSloClient(*cfg, kibanaHTTPClient).SloAPI
-	}
-
-	return &APIClient{
-		kibana:       kibanaClient,
-		kibanaOapi:   kibanaOapiClient,
-		slo:          sloAPI,
-		kibanaConfig: *cfg.Kibana,
-		fleet:        fleetClient,
-		version:      defaultClient.version,
-	}, nil
-}
-
-// NewKibanaAPIClientFromSDKResource resolves a scoped *APIClient from an
-// entity-local kibana_connection block in a Plugin SDK resource. If the block
-// is absent the provider-level default client is returned unchanged. If the
-// block is configured a new *APIClient is returned with all Kibana-derived
-// clients rebuilt from the scoped connection.
-func NewKibanaAPIClientFromSDKResource(d *schema.ResourceData, meta any) (*APIClient, diag.Diagnostics) {
-	defaultClient := extractDefaultClientFromMeta(meta)
-	version := defaultClient.version
-
-	resourceConfig, diags := config.NewFromSDKKibanaResource(d, version)
-	if diags.HasError() {
-		return nil, diags
-	}
-
-	if resourceConfig == nil {
-		return defaultClient, nil
-	}
-
-	kibanaClient, err := buildKibanaClient(*resourceConfig)
-	if err != nil {
-		return nil, diag.FromErr(err)
-	}
-
-	kibanaOapiClient, err := buildKibanaOapiClient(*resourceConfig)
-	if err != nil {
-		return nil, diag.FromErr(err)
-	}
-
-	fleetClient, err := buildFleetClient(*resourceConfig)
-	if err != nil {
-		return nil, diag.FromErr(err)
-	}
-
-	var sloAPI slo.SloAPI
-	if kibanaClient != nil {
-		kibanaHTTPClient := kibanaClient.Client.GetClient()
-		sloAPI = buildSloClient(*resourceConfig, kibanaHTTPClient).SloAPI
-	}
-
-	return &APIClient{
-		kibana:       kibanaClient,
-		kibanaOapi:   kibanaOapiClient,
-		slo:          sloAPI,
-		kibanaConfig: *resourceConfig.Kibana,
-		fleet:        fleetClient,
-		version:      version,
-	}, nil
-}
-
-func NewAPIClientFromSDKResource(d *schema.ResourceData, meta any) (*APIClient, diag.Diagnostics) {
-	defaultClient := extractDefaultClientFromMeta(meta)
-	version := defaultClient.version
-	resourceConfig, diags := config.NewFromSDKResource(d, version)
-	if diags.HasError() {
-		return nil, diags
-	}
-
-	if resourceConfig == nil {
-		return defaultClient, nil
-	}
-
-	esClient, err := buildEsClient(*resourceConfig)
-	if err != nil {
-		return nil, diag.FromErr(err)
-	}
-
-	return &APIClient{
-		elasticsearch:            esClient,
-		elasticsearchClusterInfo: defaultClient.elasticsearchClusterInfo,
-		kibana:                   defaultClient.kibana,
-		fleet:                    defaultClient.fleet,
-		version:                  version,
-	}, diags
-}
-
-// extractDefaultClientFromMeta extracts the provider-level default *APIClient
-// from the SDK meta value. It handles both the legacy *APIClient case (used in
-// tests that bypass the factory) and the current *ProviderClientFactory case.
-func extractDefaultClientFromMeta(meta any) *APIClient {
-	if factory, ok := meta.(*ProviderClientFactory); ok {
-		return factory.GetDefaultClient()
-	}
-	// Legacy path: meta is a bare *APIClient (e.g. in unit tests).
-	if client, ok := meta.(*APIClient); ok {
-		return client
-	}
-	panic(fmt.Sprintf("extractDefaultClientFromMeta: unsupported meta type %T", meta))
-}
-
-func (a *APIClient) GetESClient() (*elasticsearch.Client, error) {
-	if a.elasticsearch == nil {
-		return nil, errors.New("elasticsearch client not found")
-	}
-
-	return a.elasticsearch, nil
-}
-
-func (a *APIClient) GetKibanaClient() (*kibana.Client, error) {
-	if a.kibana == nil {
-		return nil, errors.New("kibana client not found")
-	}
-
-	return a.kibana, nil
-}
-
-func (a *APIClient) GetKibanaOapiClient() (*kibanaoapi.Client, error) {
-	if a.kibanaOapi == nil {
-		return nil, errors.New("kibanaoapi client not found")
-	}
-
-	return a.kibanaOapi, nil
-}
-
-func (a *APIClient) GetSloClient() (slo.SloAPI, error) {
-	if a.slo == nil {
-		return nil, errors.New("slo client not found")
-	}
-
-	return a.slo, nil
-}
-
-func (a *APIClient) GetFleetClient() (*fleet.Client, error) {
-	if a.fleet == nil {
-		return nil, errors.New("fleet client not found")
-	}
-
-	return a.fleet, nil
-}
-
-func (a *APIClient) SetSloAuthContext(ctx context.Context) context.Context {
-	if a.kibanaConfig.ApiKey != "" {
-		return context.WithValue(ctx, slo.ContextAPIKeys, map[string]slo.APIKey{
-			"apiKeyAuth": {
-				Prefix: "ApiKey",
-				Key:    a.kibanaConfig.ApiKey,
-			}})
-	}
-
-	return context.WithValue(ctx, slo.ContextBasicAuth, slo.BasicAuth{
-		UserName: a.kibanaConfig.Username,
-		Password: a.kibanaConfig.Password,
-	})
-}
-
-func (a *APIClient) ID(ctx context.Context, resourceID string) (*CompositeID, diag.Diagnostics) {
-	var diags diag.Diagnostics
-	clusterID, diags := a.ClusterID(ctx)
-	if diags.HasError() {
-		return nil, diags
-	}
-	return &CompositeID{*clusterID, resourceID}, diags
-}
-
-func (a *APIClient) serverInfo(ctx context.Context) (*models.ClusterInfo, diag.Diagnostics) {
-	if a.elasticsearchClusterInfo != nil {
-		return a.elasticsearchClusterInfo, nil
-	}
-
-	var diags diag.Diagnostics
-	esClient, err := a.GetESClient()
-	if err != nil {
-		return nil, diag.FromErr(err)
-	}
-	res, err := esClient.Info(esClient.Info.WithContext(ctx))
-	if err != nil {
-		return nil, diag.FromErr(err)
-	}
-	defer res.Body.Close()
-	if diags := diagutil.CheckError(res, "Unable to connect to the Elasticsearch cluster"); diags.HasError() {
-		return nil, diags
-	}
-
-	info := models.ClusterInfo{}
-	if err := json.NewDecoder(res.Body).Decode(&info); err != nil {
-		return nil, diag.FromErr(err)
-	}
-	// cache info
-	a.elasticsearchClusterInfo = &info
-
-	return &info, diags
-}
-
-func (a *APIClient) EnforceMinVersion(ctx context.Context, minVersion *version.Version) (bool, diag.Diagnostics) {
-	flavor, diags := a.ServerFlavor(ctx)
-	if diags.HasError() {
-		return false, diags
-	}
-
-	if flavor == ServerlessFlavor {
-		return true, nil
-	}
-
-	serverVersion, diags := a.ServerVersion(ctx)
-	if diags.HasError() {
-		return false, diags
-	}
-
-	return serverVersion.GreaterThanOrEqual(minVersion), nil
-}
-
 type MinVersionEnforceable interface {
 	EnforceMinVersion(ctx context.Context, minVersion *version.Version) (bool, diag.Diagnostics)
-}
-
-func (a *APIClient) ServerVersion(ctx context.Context) (*version.Version, diag.Diagnostics) {
-	if a.elasticsearch != nil {
-		return a.versionFromElasticsearch(ctx)
-	}
-
-	return a.versionFromKibana()
-}
-
-func (a *APIClient) versionFromKibana() (*version.Version, diag.Diagnostics) {
-	kibClient, err := a.GetKibanaClient()
-	if err != nil {
-		return nil, diag.Errorf("failed to get version from Kibana API: %s, "+
-			"please ensure a working 'kibana' endpoint is configured", err.Error())
-	}
-
-	status, err := kibClient.KibanaStatus.Get()
-	if err != nil {
-		return nil, diag.Errorf("failed to get version from Kibana API: %s, "+
-			"Please ensure a working 'kibana' endpoint is configured", err.Error())
-	}
-
-	vMap, ok := status["version"].(map[string]any)
-	if !ok {
-		return nil, diag.Errorf("failed to get version from Kibana API")
-	}
-
-	rawVersion, ok := vMap["number"].(string)
-	if !ok {
-		return nil, diag.Errorf("failed to get version number from Kibana status")
-	}
-
-	serverVersion, err := version.NewVersion(rawVersion)
-	if err != nil {
-		return nil, diag.FromErr(err)
-	}
-
-	return serverVersion, nil
-}
-
-func (a *APIClient) versionFromElasticsearch(ctx context.Context) (*version.Version, diag.Diagnostics) {
-	info, diags := a.serverInfo(ctx)
-	if diags.HasError() {
-		return nil, diags
-	}
-
-	rawVersion := info.Version.Number
-	serverVersion, err := version.NewVersion(rawVersion)
-	if err != nil {
-		return nil, diag.FromErr(err)
-	}
-
-	return serverVersion, nil
-}
-
-func (a *APIClient) ServerFlavor(ctx context.Context) (string, diag.Diagnostics) {
-	if a.elasticsearch != nil {
-		return a.flavorFromElasticsearch(ctx)
-	}
-
-	return a.flavorFromKibana()
-}
-
-func (a *APIClient) flavorFromElasticsearch(ctx context.Context) (string, diag.Diagnostics) {
-	info, diags := a.serverInfo(ctx)
-	if diags.HasError() {
-		return "", diags
-	}
-
-	return info.Version.BuildFlavor, nil
-}
-
-func (a *APIClient) flavorFromKibana() (string, diag.Diagnostics) {
-	kibClient, err := a.GetKibanaClient()
-	if err != nil {
-		return "", diag.Errorf("failed to get flavor from Kibana API: %s, "+
-			"please ensure a working 'kibana' endpoint is configured", err.Error())
-	}
-
-	status, err := kibClient.KibanaStatus.Get()
-	if err != nil {
-		return "", diag.Errorf("failed to get flavor from Kibana API: %s, "+
-			"Please ensure a working 'kibana' endpoint is configured", err.Error())
-	}
-
-	vMap, ok := status["version"].(map[string]any)
-	if !ok {
-		return "", diag.Errorf("failed to get flavor from Kibana API")
-	}
-
-	serverFlavor, ok := vMap["build_flavor"].(string)
-	if !ok {
-		// build_flavor field is not present in older Kibana versions (pre-serverless)
-		// Default to empty string to indicate traditional/stateful deployment
-		return "", nil
-	}
-
-	return serverFlavor, nil
-}
-
-func (a *APIClient) ClusterID(ctx context.Context) (*string, diag.Diagnostics) {
-	info, diags := a.serverInfo(ctx)
-	if diags.HasError() {
-		return nil, diags
-	}
-
-	if uuid := info.ClusterUUID; uuid != "" && uuid != "_na_" {
-		tflog.Trace(ctx, fmt.Sprintf("cluster UUID: %s", uuid))
-		return &uuid, diags
-	}
-
-	diags = append(diags, diag.Diagnostic{
-		Severity: diag.Error,
-		Summary:  "Unable to get cluster UUID",
-		Detail: `Unable to get cluster UUID.
-		There might be a problem with permissions or cluster is still starting up and UUID has not been populated yet.`,
-	})
-	return nil, diags
 }
 
 func buildEsClient(cfg config.Client) (*elasticsearch.Client, error) {
@@ -680,7 +236,7 @@ func buildFleetClient(cfg config.Client) (*fleet.Client, error) {
 	return client, nil
 }
 
-func newAPIClientFromSDK(d *schema.ResourceData, version string) (*APIClient, diag.Diagnostics) {
+func newAPIClientFromSDK(d *schema.ResourceData, version string) (*apiClient, diag.Diagnostics) {
 	cfg, diags := config.NewFromSDK(d, version)
 	if diags.HasError() {
 		return nil, diags
@@ -694,9 +250,13 @@ func newAPIClientFromSDK(d *schema.ResourceData, version string) (*APIClient, di
 	return client, nil
 }
 
-func newAPIClientFromConfig(cfg config.Client, version string) (*APIClient, error) {
-	client := &APIClient{
-		kibanaConfig: *cfg.Kibana,
+func newAPIClientFromConfig(cfg config.Client, version string) (*apiClient, error) {
+	var kibanaConfig kibana.Config
+	if cfg.Kibana != nil {
+		kibanaConfig = *cfg.Kibana
+	}
+	client := &apiClient{
+		kibanaConfig: kibanaConfig,
 		version:      version,
 	}
 

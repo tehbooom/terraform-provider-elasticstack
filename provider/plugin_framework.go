@@ -129,13 +129,12 @@ func (p *Provider) Configure(ctx context.Context, req fwprovider.ConfigureReques
 		return
 	}
 
-	client, diags := clients.NewAPIClientFromFramework(ctx, cfg, p.version)
+	factory, diags := clients.NewProviderClientFactoryFromFramework(ctx, cfg, p.version)
 	res.Diagnostics.Append(diags...)
 	if res.Diagnostics.HasError() {
 		return
 	}
 
-	factory := clients.NewProviderClientFactory(client)
 	res.DataSourceData = factory
 	res.ResourceData = factory
 }
@@ -163,7 +162,7 @@ func (p *Provider) Resources(ctx context.Context) []func() resource.Resource {
 func (p *Provider) resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		agentconfiguration.NewAgentConfigurationResource,
-		func() resource.Resource { return &importsavedobjects.Resource{} },
+		importsavedobjects.NewResource,
 		alertingrule.NewResource,
 		dataview.NewResource,
 		defaultdataview.NewResource,

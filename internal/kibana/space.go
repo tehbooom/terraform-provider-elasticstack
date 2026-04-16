@@ -21,8 +21,9 @@ import (
 	"context"
 	"regexp"
 
-	"github.com/disaster37/go-kibana-rest/v8/kbapi"
+	"github.com/elastic/terraform-provider-elasticstack/generated/kbapi"
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
+	"github.com/elastic/terraform-provider-elasticstack/internal/clients/kibanaoapi"
 	providerSchema "github.com/elastic/terraform-provider-elasticstack/internal/schema"
 	"github.com/hashicorp/go-version"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
@@ -120,11 +121,6 @@ func resourceSpaceUpsert(ctx context.Context, d *schema.ResourceData, meta any) 
 		return diags
 	}
 
-	kibana, err := client.GetKibanaClient()
-	if err != nil {
-		return diag.FromErr(err)
-	}
-
 	// Check version compatibility for solution field
 	if solution, ok := d.GetOk("solution"); ok && solution.(string) != "" {
 		serverVersion, diags := client.ServerVersion(ctx)
@@ -137,13 +133,18 @@ func resourceSpaceUpsert(ctx context.Context, d *schema.ResourceData, meta any) 
 		}
 	}
 
-	space := kbapi.KibanaSpace{
-		ID:   d.Get("space_id").(string),
-		Name: d.Get("name").(string),
+	oapiClient, err := client.GetKibanaOapiClient()
+	if err != nil {
+		return diag.FromErr(err)
 	}
 
-	if description, ok := d.GetOk("description"); ok {
-		space.Description = description.(string)
+	spaceID := d.Get("space_id").(string)
+	name := d.Get("name").(string)
+
+	var description *string
+	if v, ok := d.GetOk("description"); ok {
+		s := v.(string)
+		description = &s
 	}
 
 	features := make([]string, 0)
@@ -153,44 +154,71 @@ func resourceSpaceUpsert(ctx context.Context, d *schema.ResourceData, meta any) 
 			features = append(features, e.(string))
 		}
 	}
-	space.DisabledFeatures = features
 
-	if initials, ok := d.GetOk("initials"); ok {
-		space.Initials = initials.(string)
+	var initials *string
+	if v, ok := d.GetOk("initials"); ok {
+		s := v.(string)
+		initials = &s
 	}
 
-	if color, ok := d.GetOk("color"); ok {
-		space.Color = color.(string)
+	var color *string
+	if v, ok := d.GetOk("color"); ok {
+		s := v.(string)
+		color = &s
 	}
 
-	if imageURL, ok := d.GetOk("image_url"); ok {
-		space.ImageURL = imageURL.(string)
+	var imageURL *string
+	if v, ok := d.GetOk("image_url"); ok {
+		s := v.(string)
+		imageURL = &s
 	}
 
-	if solution, ok := d.GetOk("solution"); ok {
-		space.Solution = solution.(string)
-	}
-
-	var spaceResponse *kbapi.KibanaSpace
+	var spaceResponse *kbapi.SpaceResponse
 
 	if d.IsNewResource() {
-		spaceResponse, err = kibana.KibanaSpaces.Create(&space)
-		if err != nil {
-			return diag.FromErr(err)
+		body := kbapi.PostSpacesSpaceJSONRequestBody{
+			Id:               spaceID,
+			Name:             name,
+			Description:      description,
+			DisabledFeatures: &features,
+			Initials:         initials,
+			Color:            color,
+			ImageUrl:         imageURL,
+		}
+		if v, ok := d.GetOk("solution"); ok {
+			s := kbapi.PostSpacesSpaceJSONBodySolution(v.(string))
+			body.Solution = &s
+		}
+		spaceResponse, diags = kibanaoapi.CreateSpace(ctx, oapiClient, body)
+		if diags.HasError() {
+			return diags
 		}
 	} else {
-		spaceResponse, err = kibana.KibanaSpaces.Update(&space)
-		if err != nil {
-			return diag.FromErr(err)
+		body := kbapi.PutSpacesSpaceIdJSONRequestBody{
+			Id:               spaceID,
+			Name:             name,
+			Description:      description,
+			DisabledFeatures: &features,
+			Initials:         initials,
+			Color:            color,
+			ImageUrl:         imageURL,
+		}
+		if v, ok := d.GetOk("solution"); ok {
+			s := kbapi.PutSpacesSpaceIdJSONBodySolution(v.(string))
+			body.Solution = &s
+		}
+		spaceResponse, diags = kibanaoapi.UpdateSpace(ctx, oapiClient, spaceID, body)
+		if diags.HasError() {
+			return diags
 		}
 	}
 
-	d.SetId(spaceResponse.ID)
+	d.SetId(spaceResponse.Id)
 
 	return resourceSpaceRead(ctx, d, meta)
 }
 
-func resourceSpaceRead(_ context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
+func resourceSpaceRead(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
 	factory, diags := clients.ConvertMetaToFactory(meta)
 	if diags.HasError() {
 		return diags
@@ -204,47 +232,72 @@ func resourceSpaceRead(_ context.Context, d *schema.ResourceData, meta any) diag
 		id = compID.ResourceID
 	}
 
-	kibana, err := client.GetKibanaClient()
+	oapiClient, err := client.GetKibanaOapiClient()
 	if err != nil {
 		return diag.FromErr(err)
 	}
 
-	space, err := kibana.KibanaSpaces.Get(id)
-	if space == nil && err == nil {
+	space, sdkDiags := kibanaoapi.GetSpaceSDK(ctx, oapiClient, id)
+	if sdkDiags.HasError() {
+		return sdkDiags
+	}
+	if space == nil {
 		d.SetId("")
 		return diags
 	}
-	if err != nil {
-		return diag.FromErr(err)
-	}
 
 	// set the fields
-	if err := d.Set("space_id", space.ID); err != nil {
+	if err := d.Set("space_id", space.Id); err != nil {
 		return diag.FromErr(err)
 	}
 	if err := d.Set("name", space.Name); err != nil {
 		return diag.FromErr(err)
 	}
-	if err := d.Set("description", space.Description); err != nil {
+	if space.Description != nil {
+		if err := d.Set("description", *space.Description); err != nil {
+			return diag.FromErr(err)
+		}
+	} else {
+		if err := d.Set("description", ""); err != nil {
+			return diag.FromErr(err)
+		}
+	}
+	disabledFeatures := []string{}
+	if space.DisabledFeatures != nil {
+		disabledFeatures = *space.DisabledFeatures
+	}
+	if err := d.Set("disabled_features", disabledFeatures); err != nil {
 		return diag.FromErr(err)
 	}
-	if err := d.Set("disabled_features", space.DisabledFeatures); err != nil {
+	initials := ""
+	if space.Initials != nil {
+		initials = *space.Initials
+	}
+	if err := d.Set("initials", initials); err != nil {
 		return diag.FromErr(err)
 	}
-	if err := d.Set("initials", space.Initials); err != nil {
+	color := ""
+	if space.Color != nil {
+		color = *space.Color
+	}
+	if err := d.Set("color", color); err != nil {
 		return diag.FromErr(err)
 	}
-	if err := d.Set("color", space.Color); err != nil {
-		return diag.FromErr(err)
+	if space.Solution != nil {
+		if err := d.Set("solution", *space.Solution); err != nil {
+			return diag.FromErr(err)
+		}
+	} else {
+		if err := d.Set("solution", ""); err != nil {
+			return diag.FromErr(err)
+		}
 	}
-	if err := d.Set("solution", space.Solution); err != nil {
-		return diag.FromErr(err)
-	}
+	// image_url is intentionally not populated from API read (preserved behavior)
 
 	return diags
 }
 
-func resourceSpaceDelete(_ context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
+func resourceSpaceDelete(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
 	factory, diags := clients.ConvertMetaToFactory(meta)
 	if diags.HasError() {
 		return diags
@@ -258,14 +311,13 @@ func resourceSpaceDelete(_ context.Context, d *schema.ResourceData, meta any) di
 		id = compID.ResourceID
 	}
 
-	kibana, err := client.GetKibanaClient()
+	oapiClient, err := client.GetKibanaOapiClient()
 	if err != nil {
 		return diag.FromErr(err)
 	}
 
-	err = kibana.KibanaSpaces.Delete(id)
-	if err != nil {
-		return diag.FromErr(err)
+	if sdkDiags := kibanaoapi.DeleteSpace(ctx, oapiClient, id); sdkDiags.HasError() {
+		return sdkDiags
 	}
 
 	d.SetId("")

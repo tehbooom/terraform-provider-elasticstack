@@ -13,7 +13,9 @@ resource "elasticstack_kibana_import_saved_objects" "example" {
   id                   = <computed, string>  # UUID generated on create; UseStateForUnknown
   space_id             = <optional, string>  # target Kibana space; uses default space when omitted
   file_contents        = <required, string>  # NDJSON content from Kibana export API
-  overwrite            = <optional, bool>    # automatically resolve conflicts by overwriting
+  overwrite            = <optional, bool>    # automatically resolve conflicts by overwriting; conflicts with create_new_copies
+  create_new_copies    = <optional, bool>    # regenerate IDs and reset origin; conflicts with overwrite and compatibility_mode
+  compatibility_mode   = <optional, bool>    # adjust objects for cross-version compatibility; conflicts with create_new_copies
   ignore_import_errors = <optional, bool>    # if true, import errors do not fail apply
 
   # Computed result attributes
@@ -37,10 +39,11 @@ resource "elasticstack_kibana_import_saved_objects" "example" {
 
 Notes:
 
-- The resource uses the legacy Kibana SDK client (`GetKibanaClient`), not the Kibana OpenAPI client.
+- The resource uses the generated `kbapi` Kibana OpenAPI client (`GetKibanaOapiClient`) via the `kibanaoapi.ImportSavedObjects` helper.
 - Read and Delete are intentional no-ops; the resource is not refreshed from Kibana on plan.
 - The resource does not support Terraform import.
 - The resource does not declare a custom state upgrader.
+- `create_new_copies` conflicts with both `overwrite` and `compatibility_mode` (enforced via `ResourceWithConfigValidators`).
 
 ## Requirements
 
@@ -88,21 +91,21 @@ The resource SHALL generate a UUID as the computed `id` on the first create and 
 
 ### Requirement: Effective Kibana client selection (REQ-004)
 
-The resource SHALL use the provider's configured Kibana legacy client by default for create and update. When `kibana_connection` is configured on the resource, the resource SHALL resolve an effective scoped client from that block and SHALL use the scoped Kibana legacy client for create and update.
+The resource SHALL use the provider's configured Kibana OpenAPI client (`GetKibanaOapiClient`) by default for create and update. When `kibana_connection` is configured on the resource, the resource SHALL resolve an effective scoped client from that block and SHALL use the scoped Kibana OpenAPI client for create and update.
 
 #### Scenario: Standard provider connection
 
 - **WHEN** `kibana_connection` is not configured on the resource
-- **THEN** all import saved objects API operations SHALL use the provider-level Kibana legacy client
+- **THEN** all import saved objects API operations SHALL use the provider-level Kibana OpenAPI client
 
 #### Scenario: Scoped Kibana connection
 
 - **WHEN** `kibana_connection` is configured on the resource
-- **THEN** all import saved objects API operations SHALL use the scoped Kibana legacy client derived from that block
+- **THEN** all import saved objects API operations SHALL use the scoped Kibana OpenAPI client derived from that block
 
 ### Requirement: Create and update share the same import logic (REQ-005)
 
-Create and update SHALL both invoke the same import logic: reading the plan, calling the Kibana Saved Objects Import API, and writing the result to state. Changing `file_contents`, `overwrite`, or `space_id` SHALL trigger an in-place update that re-runs the import.
+Create and update SHALL both invoke the same import logic: reading the plan, calling the Kibana Saved Objects Import API, and writing the result to state. Changing `file_contents`, `overwrite`, `space_id`, `create_new_copies`, or `compatibility_mode` SHALL trigger an in-place update that re-runs the import.
 
 #### Scenario: Update re-imports objects
 
@@ -185,11 +188,49 @@ The resource SHALL pass the `overwrite` attribute value to the Kibana Saved Obje
 - WHEN create or update runs
 - THEN the provider SHALL send `overwrite: true` to the Import API, resolving conflicts automatically
 
+### Requirement: create_new_copies flag (REQ-011)
+
+The resource SHALL expose an optional `create_new_copies` boolean attribute. When set to `true`, the provider SHALL send `createNewCopies=true` on the Import API request. When unset or `false`, the provider SHALL omit the query parameter.
+
+#### Scenario: create_new_copies forwarded to API
+
+- GIVEN `create_new_copies = true`, a valid export in `file_contents`, and no conflicting `overwrite` or `compatibility_mode` flags in configuration
+- WHEN create or update runs
+- THEN the provider SHALL include `createNewCopies=true` on the Import API request
+
+### Requirement: compatibility_mode flag (REQ-012)
+
+The resource SHALL expose an optional `compatibility_mode` boolean attribute. When set to `true`, the provider SHALL send `compatibilityMode=true` on the Import API request. When unset or `false`, the provider SHALL omit the query parameter.
+
+#### Scenario: compatibility_mode forwarded to API
+
+- GIVEN `compatibility_mode = true`, a valid export in `file_contents`, and `create_new_copies` is not set to `true` in configuration
+- WHEN create or update runs
+- THEN the provider SHALL include `compatibilityMode=true` on the Import API request
+
+### Requirement: Mutually exclusive import flags (REQ-013)
+
+The resource SHALL reject, at plan time, combinations of `overwrite`, `create_new_copies`, and `compatibility_mode` that the Kibana Saved Objects Import API rejects. Specifically, `create_new_copies` is incompatible with `overwrite` and with `compatibility_mode`. These constraints SHALL be enforced via `ResourceWithConfigValidators` before any API call is made.
+
+#### Scenario: create_new_copies conflicts with overwrite
+
+- GIVEN both `create_new_copies = true` and `overwrite = true`
+- WHEN Terraform validates the configuration
+- THEN the provider SHALL return a configuration error diagnostic explaining the conflict
+
+#### Scenario: create_new_copies conflicts with compatibility_mode
+
+- GIVEN both `create_new_copies = true` and `compatibility_mode = true`
+- WHEN Terraform validates the configuration
+- THEN the provider SHALL return a configuration error diagnostic explaining the conflict
+
 ## Traceability
 
 | Area | Primary files |
 |------|---------------|
-| Schema / Metadata / Configure | `internal/kibana/import_saved_objects/schema.go` |
+| Schema / Metadata / Configure / ConfigValidators | `internal/kibana/import_saved_objects/schema.go` |
 | Create / Update / Import logic | `internal/kibana/import_saved_objects/create.go`, `internal/kibana/import_saved_objects/update.go` |
 | Read (no-op) | `internal/kibana/import_saved_objects/read.go` |
 | Delete (no-op) | `internal/kibana/import_saved_objects/delete.go` |
+| kbapi multipart helper | `internal/clients/kibanaoapi/saved_objects_import.go` |
+| Unit tests for helper | `internal/clients/kibanaoapi/saved_objects_import_test.go` |

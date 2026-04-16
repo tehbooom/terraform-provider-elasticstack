@@ -598,6 +598,7 @@ var transformers = []TransformFunc{
 	removeBrokenDiscriminator,
 	fixPutSecurityRoleName,
 	fixGetSpacesParams,
+	fixSpaceResponseSchemas,
 	fixSecurityExceptionListItems,
 	removeDuplicateOneOfRefs,
 	transformRemoveAnyOfWhenOneOfPresent,
@@ -824,6 +825,16 @@ func transformKibanaPaths(schema *Schema) {
 	sytheticsParamsPath := schema.MustGetPath("/api/synthetics/params")
 	sytheticsParamsPath.Post.CreateRef(schema, "create_param_response", "responses.200.content.application/json.schema")
 
+	// The POST /api/synthetics/private_locations endpoint returns the same schema as
+	// Synthetics_getPrivateLocation (already a named component used by the GET endpoints).
+	// Point the POST 200 response at that component so the generated client uses the
+	// typed struct instead of map[string]interface{}.
+	syntheticsPrivateLocationsPath := schema.MustGetPath("/api/synthetics/private_locations")
+	syntheticsPrivateLocationsPath.Post.Set(
+		"responses.200.content.application/json.schema",
+		Map{"$ref": "#/components/schemas/Synthetics_getPrivateLocation"},
+	)
+
 	schema.Components.CreateRef(schema, "Data_views_data_view_response_object_inner", "schemas.Data_views_data_view_response_object.properties.data_view")
 	schema.Components.CreateRef(schema, "Data_views_sourcefilter_item", "schemas.Data_views_sourcefilters.items")
 	schema.Components.CreateRef(schema, "Data_views_runtimefieldmap_script", "schemas.Data_views_runtimefieldmap.properties.script")
@@ -979,6 +990,53 @@ func fixPutSecurityRoleName(schema *Schema) {
 
 func fixGetSpacesParams(schema *Schema) {
 	schema.MustGetPath("/api/spaces/space").MustGetEndpoint("get").Delete("parameters.1.schema.anyOf")
+}
+
+// fixSpaceResponseSchemas defines strongly typed response schemas for the Kibana Spaces API.
+// The Kibana OAS does not include response body schemas for space endpoints; we add them here
+// so that oapi-codegen generates typed JSON200 fields on the response structs, making
+// the generated client usable without manual JSON unmarshalling.
+func fixSpaceResponseSchemas(schema *Schema) {
+	// Define a reusable space_response component schema matching the legacy KibanaSpace shape.
+	schema.Components.Set("schemas.space_response", Map{
+		"type": "object",
+		"properties": Map{
+			"id":          Map{"type": "string"},
+			"name":        Map{"type": "string"},
+			"description": Map{"type": "string"},
+			"disabledFeatures": Map{
+				"type":  "array",
+				"items": Map{"type": "string"},
+			},
+			"initials":  Map{"type": "string"},
+			"color":     Map{"type": "string"},
+			"imageUrl":  Map{"type": "string"},
+			"solution":  Map{"type": "string"},
+			"_reserved": Map{"type": "boolean"},
+		},
+		"required": Slice{"id", "name"},
+	})
+
+	spaceRef := Map{"$ref": "#/components/schemas/space_response"}
+
+	// GET /api/spaces/space — returns array of spaces
+	getAll := schema.MustGetPath("/api/spaces/space").MustGetEndpoint("get")
+	getAll.Set("responses.200.content.application/json.schema", Map{
+		"type":  "array",
+		"items": spaceRef,
+	})
+
+	// POST /api/spaces/space — returns the created space
+	post := schema.MustGetPath("/api/spaces/space").MustGetEndpoint("post")
+	post.Set("responses.200.content.application/json.schema", spaceRef)
+
+	// GET /api/spaces/space/{id} — returns a single space
+	getOne := schema.MustGetPath("/api/spaces/space/{id}").MustGetEndpoint("get")
+	getOne.Set("responses.200.content.application/json.schema", spaceRef)
+
+	// PUT /api/spaces/space/{id} — returns the updated space
+	put := schema.MustGetPath("/api/spaces/space/{id}").MustGetEndpoint("put")
+	put.Set("responses.200.content.application/json.schema", spaceRef)
 }
 
 func fixDashboardPanelItemRefs(schema *Schema) {

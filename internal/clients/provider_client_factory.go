@@ -32,7 +32,7 @@ import (
 // ProviderClientFactory is the provider-scoped client-resolution surface
 // injected into Plugin Framework ProviderData and SDK meta. Resources and data
 // sources use the factory to obtain typed clients rather than consuming a broad
-// *APIClient directly.
+// *apiClient directly.
 //
 // The factory exposes typed resolution methods for all supported connection types:
 //   - Typed Kibana/Fleet resolution methods returning *KibanaScopedClient
@@ -41,13 +41,25 @@ type ProviderClientFactory struct {
 	// defaultClient holds provider-level clients built from the provider
 	// configuration block. It is used as the fallback when an entity does not
 	// configure a resource-local connection block.
-	defaultClient *APIClient
+	defaultClient *apiClient
 }
 
 // NewProviderClientFactory constructs a ProviderClientFactory wrapping the
 // provided default client. This is called by the provider Configure method.
-func NewProviderClientFactory(defaultClient *APIClient) *ProviderClientFactory {
+func NewProviderClientFactory(defaultClient *apiClient) *ProviderClientFactory {
 	return &ProviderClientFactory{defaultClient: defaultClient}
+}
+
+// NewProviderClientFactoryFromFramework builds a ProviderClientFactory from the
+// supplied framework configuration. It is the canonical entry point for
+// external packages (e.g. xpprovider) that need to construct a factory without
+// referencing the unexported apiClient type.
+func NewProviderClientFactoryFromFramework(ctx context.Context, cfg config.ProviderConfiguration, version string) (*ProviderClientFactory, fwdiags.Diagnostics) {
+	client, diags := newAPIClientFromFramework(ctx, cfg, version)
+	if diags.HasError() {
+		return nil, diags
+	}
+	return NewProviderClientFactory(client), diags
 }
 
 // --- Typed Kibana / Fleet resolution methods ---
@@ -221,16 +233,6 @@ func (f *ProviderClientFactory) GetElasticsearchClientFromSDK(d *schema.Resource
 	return &ElasticsearchScopedClient{
 		elasticsearch: esClient,
 	}, nil
-}
-
-// GetDefaultClient returns the provider-level default *APIClient.
-// This is an internal bridge shim retained for cross-cutting legacy adapter
-// code (ConvertProviderData, MaybeNewAPIClientFromFrameworkResource, etc.) that
-// has not yet been migrated to a typed resolution method. It is not an
-// Elasticsearch entity resolution method and must not be used as a substitute
-// for GetElasticsearchClient or GetElasticsearchClientFromSDK.
-func (f *ProviderClientFactory) GetDefaultClient() *APIClient {
-	return f.defaultClient
 }
 
 // --- Helper constructors ---
