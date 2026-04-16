@@ -85,16 +85,16 @@ func getSchema() schema.Schema {
 				Optional:            true,
 				MarkdownDescription: "Symbol or initials for the agent avatar (e.g., `SI`).",
 			},
-		"labels": schema.SetAttribute{
-			ElementType:         types.StringType,
-			Optional:            true,
-			MarkdownDescription: "Set of labels for the agent.",
-		},
-		"tools": schema.SetAttribute{
-			ElementType:         types.StringType,
-			Optional:            true,
-			MarkdownDescription: "Set of tool IDs that the agent can use.",
-		},
+			"labels": schema.SetAttribute{
+				ElementType:         types.StringType,
+				Optional:            true,
+				MarkdownDescription: "Set of labels for the agent.",
+			},
+			"tools": schema.SetAttribute{
+				ElementType:         types.StringType,
+				Optional:            true,
+				MarkdownDescription: "Set of tool IDs that the agent can use.",
+			},
 			"instructions": schema.StringAttribute{
 				Optional:            true,
 				MarkdownDescription: "Optional system instructions that define the agent behavior.",

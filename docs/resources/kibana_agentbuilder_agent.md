@@ -60,9 +60,9 @@ resource "elasticstack_kibana_agentbuilder_agent" "space_agent" {
 - `description` (String) The agent description.
 - `instructions` (String) Optional system instructions that define the agent behavior.
 - `kibana_connection` (Block List) Kibana connection configuration block. (see [below for nested schema](#nestedblock--kibana_connection))
-- `labels` (List of String) List of labels for the agent.
+- `labels` (Set of String) Set of labels for the agent.
 - `space_id` (String) An identifier for the space. If not provided, the default space is used.
-- `tools` (List of String) List of tool IDs that the agent can use.
+- `tools` (Set of String) Set of tool IDs that the agent can use.
 
 ### Read-Only
 
