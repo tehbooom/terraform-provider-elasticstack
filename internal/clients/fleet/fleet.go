@@ -595,32 +595,41 @@ func decodeProxyItem(body []byte) (*ProxyItem, error) {
 	return &wrapper.Item, nil
 }
 
-func doRawProxyRequest(resp *http.Response, err error) (*ProxyItem, diag.Diagnostics) {
+func readRawProxyBody(resp *http.Response, err error) ([]byte, int, diag.Diagnostics) {
 	if err != nil {
-		return nil, diagutil.FrameworkDiagFromError(err)
+		return nil, 0, diagutil.FrameworkDiagFromError(err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, diagutil.FrameworkDiagFromError(err)
+		return nil, resp.StatusCode, diagutil.FrameworkDiagFromError(err)
 	}
-	switch resp.StatusCode {
+	return body, resp.StatusCode, nil
+}
+
+func decodeProxyItemFromResponse(body []byte, statusCode int) (*ProxyItem, diag.Diagnostics) {
+	switch statusCode {
 	case http.StatusOK:
 		item, err := decodeProxyItem(body)
 		if err != nil {
 			return nil, diagutil.FrameworkDiagFromError(err)
 		}
 		return item, nil
-	case http.StatusNotFound:
-		return nil, nil
 	default:
-		return nil, reportUnknownError(resp.StatusCode, body)
+		return nil, reportUnknownError(statusCode, body)
 	}
 }
 
-// GetProxy reads a specific Fleet proxy from the API.
+// GetProxy reads a specific Fleet proxy from the API. Returns (nil, nil) on HTTP 404.
 func GetProxy(ctx context.Context, client *Client, spaceID, proxyID string) (*ProxyItem, diag.Diagnostics) {
-	return doRawProxyRequest(client.API.GetFleetProxiesItemid(ctx, proxyID, spaceAwarePathRequestEditor(spaceID)))
+	body, statusCode, diags := readRawProxyBody(client.API.GetFleetProxiesItemid(ctx, proxyID, spaceAwarePathRequestEditor(spaceID)))
+	if diags.HasError() {
+		return nil, diags
+	}
+	if statusCode == http.StatusNotFound {
+		return nil, nil
+	}
+	return decodeProxyItemFromResponse(body, statusCode)
 }
 
 // CreateProxy creates a new Fleet proxy. Both request and response bypass the
@@ -631,7 +640,11 @@ func CreateProxy(ctx context.Context, client *Client, spaceID string, body any) 
 	if err != nil {
 		return nil, diagutil.FrameworkDiagFromError(err)
 	}
-	return doRawProxyRequest(client.API.PostFleetProxiesWithBody(ctx, "application/json", bytes.NewReader(b), spaceAwarePathRequestEditor(spaceID)))
+	respBody, statusCode, diags := readRawProxyBody(client.API.PostFleetProxiesWithBody(ctx, "application/json", bytes.NewReader(b), spaceAwarePathRequestEditor(spaceID)))
+	if diags.HasError() {
+		return nil, diags
+	}
+	return decodeProxyItemFromResponse(respBody, statusCode)
 }
 
 // UpdateProxy updates an existing Fleet proxy. See CreateProxy for why raw JSON is used.
@@ -640,7 +653,11 @@ func UpdateProxy(ctx context.Context, client *Client, spaceID, proxyID string, b
 	if err != nil {
 		return nil, diagutil.FrameworkDiagFromError(err)
 	}
-	return doRawProxyRequest(client.API.PutFleetProxiesItemidWithBody(ctx, proxyID, "application/json", bytes.NewReader(b), spaceAwarePathRequestEditor(spaceID)))
+	respBody, statusCode, diags := readRawProxyBody(client.API.PutFleetProxiesItemidWithBody(ctx, proxyID, "application/json", bytes.NewReader(b), spaceAwarePathRequestEditor(spaceID)))
+	if diags.HasError() {
+		return nil, diags
+	}
+	return decodeProxyItemFromResponse(respBody, statusCode)
 }
 
 // DeleteProxy deletes an existing Fleet proxy.
