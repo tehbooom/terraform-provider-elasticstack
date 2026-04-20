@@ -2,6 +2,7 @@
 
 ### Changes
 
+- Add `elasticstack_fleet_proxy` resource ([#2364](https://github.com/elastic/terraform-provider-elasticstack/pull/2364))
 - Add `elasticstack_kibana_agentbuilder_agent` resource and data source ([#2295](https://github.com/elastic/terraform-provider-elasticstack/pull/2295))
 - Add `create_new_copies` and `compatibility_mode` attributes to `elasticstack_kibana_import_saved_objects` ([#2289](https://github.com/elastic/terraform-provider-elasticstack/pull/2289))
 - Fix `elasticstack_elasticsearch_watch` updates when Watcher redacts nested action secrets on refresh. ([#2296](https://github.com/elastic/terraform-provider-elasticstack/pull/2296))
