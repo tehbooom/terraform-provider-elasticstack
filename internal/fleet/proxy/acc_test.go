@@ -26,11 +26,15 @@ import (
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
 	fleetclient "github.com/elastic/terraform-provider-elasticstack/internal/clients/fleet"
 	"github.com/elastic/terraform-provider-elasticstack/internal/diagutil"
+	"github.com/elastic/terraform-provider-elasticstack/internal/versionutils"
+	"github.com/hashicorp/go-version"
 	"github.com/hashicorp/terraform-plugin-testing/config"
 	sdkacctest "github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
+
+var minFleetProxyVersion = version.Must(version.NewVersion("8.7.1"))
 
 func TestAccResourceFleetProxy(t *testing.T) {
 	proxyName := sdkacctest.RandString(22)
@@ -40,6 +44,7 @@ func TestAccResourceFleetProxy(t *testing.T) {
 		CheckDestroy: checkResourceFleetProxyDestroy,
 		Steps: []resource.TestStep{
 			{
+				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(minFleetProxyVersion),
 				ProtoV6ProviderFactories: acctest.Providers,
 				ConfigDirectory:          acctest.NamedTestCaseDirectory("create"),
 				ConfigVariables: config.Variables{
@@ -55,6 +60,7 @@ func TestAccResourceFleetProxy(t *testing.T) {
 				),
 			},
 			{
+				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(minFleetProxyVersion),
 				ProtoV6ProviderFactories: acctest.Providers,
 				ConfigDirectory:          acctest.NamedTestCaseDirectory("update"),
 				ConfigVariables: config.Variables{
@@ -68,6 +74,7 @@ func TestAccResourceFleetProxy(t *testing.T) {
 				),
 			},
 			{
+				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(minFleetProxyVersion),
 				ProtoV6ProviderFactories: acctest.Providers,
 				ConfigDirectory:          acctest.NamedTestCaseDirectory("clear_headers"),
 				ConfigVariables: config.Variables{
@@ -79,6 +86,7 @@ func TestAccResourceFleetProxy(t *testing.T) {
 				),
 			},
 			{
+				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(minFleetProxyVersion),
 				ProtoV6ProviderFactories: acctest.Providers,
 				ConfigDirectory:          acctest.NamedTestCaseDirectory("clear_headers"),
 				ConfigVariables: config.Variables{
