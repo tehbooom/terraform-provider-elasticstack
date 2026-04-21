@@ -30,7 +30,7 @@ During the Kibana/Fleet typed-client phase, the `*clients.ProviderClientFactory`
 - **THEN** the factory SHALL expose a transitional resolution path that preserves the existing broad-client and lint-enforced Elasticsearch behavior
 
 ### Requirement: Kibana scoped client contract
-The typed Kibana-scoped client returned by the factory SHALL expose the Kibana OpenAPI client, SLO client, Fleet client, Kibana auth-context helpers, and Kibana-derived version and flavor checks required by covered Kibana and Fleet entities. The typed Kibana-scoped client SHALL NOT expose `github.com/disaster37/go-kibana-rest` as part of the provider wiring contract once all dependent Kibana and Fleet resources have completed their per-entity migrations off the legacy client.
+The typed Kibana-scoped client returned by the factory SHALL expose the Kibana OpenAPI client, SLO client, Fleet client, Kibana auth-context helpers, and Kibana-derived version and flavor checks required by covered Kibana and Fleet entities. The factory contract SHALL use the Kibana OpenAPI configuration surface as the only Kibana connection contract and SHALL NOT expose or require `github.com/disaster37/go-kibana-rest` as part of provider wiring.
 
 #### Scenario: Scoped client supports Kibana and Fleet operations
 - **WHEN** a covered Kibana or Fleet entity uses a typed Kibana-scoped client
@@ -39,4 +39,8 @@ The typed Kibana-scoped client returned by the factory SHALL expose the Kibana O
 #### Scenario: Scoped client supports version gating
 - **WHEN** a covered Kibana or Fleet entity performs version or flavor checks through the typed Kibana-scoped client
 - **THEN** the client SHALL provide `ServerVersion()`, `ServerFlavor()`, or equivalent typed behavior needed for those checks
+
+#### Scenario: Factory does not require a legacy Kibana config surface
+- **WHEN** the provider client factory resolves a Kibana-scoped client from provider configuration or `kibana_connection`
+- **THEN** it SHALL validate and build that client from the Kibana OpenAPI config surface without relying on a parallel legacy Kibana REST config object
 

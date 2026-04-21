@@ -188,8 +188,14 @@ func (f *ProviderClientFactory) GetElasticsearchClient(ctx context.Context, esCo
 		return nil, diags
 	}
 
+	var esEndpoints []string
+	if cfg.Elasticsearch != nil {
+		esEndpoints = cfg.Elasticsearch.Addresses
+	}
+
 	return &ElasticsearchScopedClient{
 		elasticsearch: esClient,
+		esEndpoints:   esEndpoints,
 	}, nil
 }
 
@@ -229,8 +235,14 @@ func (f *ProviderClientFactory) GetElasticsearchClientFromSDK(d *schema.Resource
 		}}
 	}
 
+	var esEndpoints []string
+	if resourceConfig.Elasticsearch != nil {
+		esEndpoints = resourceConfig.Elasticsearch.Addresses
+	}
+
 	return &ElasticsearchScopedClient{
 		elasticsearch: esClient,
+		esEndpoints:   esEndpoints,
 	}, nil
 }
 
@@ -239,7 +251,7 @@ func (f *ProviderClientFactory) GetElasticsearchClientFromSDK(d *schema.Resource
 // buildKibanaScopedClientFromConfig builds a *KibanaScopedClient from a
 // config.Client that has already been populated from a scoped kibana_connection.
 func buildKibanaScopedClientFromConfig(cfg config.Client, version string) (*KibanaScopedClient, fwdiags.Diagnostics) {
-	if cfg.Kibana == nil {
+	if cfg.KibanaOapi == nil {
 		return nil, fwdiags.Diagnostics{fwdiags.NewErrorDiagnostic(
 			"Missing Kibana config",
 			"kibana_connection is required but the Kibana configuration was not set",
@@ -256,10 +268,22 @@ func buildKibanaScopedClientFromConfig(cfg config.Client, version string) (*Kiba
 		return nil, fwdiags.Diagnostics{fwdiags.NewErrorDiagnostic("Failed to build Fleet client", err.Error())}
 	}
 
+	var kibanaEndpoint string
+	if cfg.KibanaOapi != nil {
+		kibanaEndpoint = cfg.KibanaOapi.URL
+	}
+
+	var fleetEndpoint string
+	if cfg.Fleet != nil {
+		fleetEndpoint = cfg.Fleet.URL
+	}
+
 	return &KibanaScopedClient{
-		kibanaOapi: kibanaOapiClient,
-		fleet:      fleetClient,
-		version:    version,
+		kibanaOapi:     kibanaOapiClient,
+		fleet:          fleetClient,
+		version:        version,
+		kibanaEndpoint: kibanaEndpoint,
+		fleetEndpoint:  fleetEndpoint,
 	}, nil
 }
 

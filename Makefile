@@ -1,7 +1,7 @@
 .DEFAULT_GOAL = help
 SHELL := /bin/bash
 
-VERSION ?= 0.14.3
+VERSION ?= 0.14.4
 
 NAME = elasticstack
 BINARY = terraform-provider-${NAME}
@@ -200,7 +200,7 @@ lint: GOLANGCIFLAGS += --fix
 lint: setup golangci-lint fmt docs-generate ## Run lints to check the spelling and common go patterns
 
 .PHONY: check-lint
-check-lint: setup check-openspec golangci-lint check-workflows check-fmt check-docs
+check-lint: setup check-openspec golangci-lint check-workflows check-fmt gen check-docs
 
 .PHONY: setup-openspec
 setup-openspec: node_modules/.openspec-stamp ## Install Node dependencies (OpenSpec CLI via npm ci)
@@ -290,22 +290,3 @@ release-notes: ## greps UNRELEASED notes from the CHANGELOG
 help: ## this help
 	@ awk 'BEGIN {FS = ":.*##"; printf "Usage: make \033[36m<target>\033[0m\n\nTargets:\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-10s\033[0m\t%s\n", $$1, $$2 }' $(MAKEFILE_LIST) | column -s$$'\t' -t
 
-.PHONY: generate-slo-client
-generate-slo-client: tools ## generate Kibana slo client
-	@ rm -rf generated/slo
-	@ docker run --rm -v "${PWD}:/local" openapitools/openapi-generator-cli:v7.0.1 generate \
-		-i /local/generated/slo-spec.yml \
-		--git-repo-id terraform-provider-elasticstack \
-		--git-user-id elastic \
-		-p isGoSubmodule=true \
-		-p packageName=slo \
-		-p generateInterfaces=true \
-		-p useOneOfDiscriminatorLookup=true \
-		-g go \
-		-o /local/generated/slo \
-		 --type-mappings=float32=float64
-	@ rm -rf generated/slo/go.mod generated/slo/go.sum generated/slo/test
-	@ go fmt ./generated/slo/...
-
-.PHONY: generate-clients
-generate-clients: generate-slo-client gen ## generate all clients

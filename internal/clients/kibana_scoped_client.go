@@ -39,10 +39,24 @@ type KibanaScopedClient struct {
 	fleet      *fleetclient.Client
 	// version is the provider version string used to tag API user-agent headers.
 	version string
+	// kibanaEndpoint holds the resolved Kibana endpoint URL captured after
+	// provider configuration, entity-local overrides, and environment overrides
+	// have been applied. It is used by accessor validation to distinguish missing
+	// endpoint configuration from unexpected nil states.
+	kibanaEndpoint string
+	// fleetEndpoint holds the resolved Fleet endpoint URL captured after
+	// provider configuration, entity-local overrides, and environment overrides
+	// have been applied. For Fleet, the value reflects the already-resolved
+	// cfg.Fleet endpoint which may have been inherited from the Kibana-derived
+	// config path.
+	fleetEndpoint string
 }
 
 // GetKibanaOapiClient returns the Kibana OpenAPI client.
 func (k *KibanaScopedClient) GetKibanaOapiClient() (*kibanaoapi.Client, error) {
+	if k.kibanaEndpoint == "" {
+		return nil, errors.New("kibana OpenAPI client is not configured: set kibana.endpoints, kibana_connection.endpoints, or KIBANA_ENDPOINT")
+	}
 	if k.kibanaOapi == nil {
 		return nil, errors.New("kibanaoapi client not found")
 	}
@@ -51,6 +65,12 @@ func (k *KibanaScopedClient) GetKibanaOapiClient() (*kibanaoapi.Client, error) {
 
 // GetFleetClient returns the Fleet client.
 func (k *KibanaScopedClient) GetFleetClient() (*fleetclient.Client, error) {
+	if k.fleetEndpoint == "" {
+		const fleetMsg = "fleet client is not configured: set fleet.endpoint or FLEET_ENDPOINT, " +
+			"or configure kibana.endpoints, kibana_connection.endpoints, or KIBANA_ENDPOINT " +
+			"for inherited Fleet endpoint resolution"
+		return nil, errors.New(fleetMsg)
+	}
 	if k.fleet == nil {
 		return nil, errors.New("fleet client not found")
 	}
@@ -128,9 +148,11 @@ func (k *KibanaScopedClient) EnforceMinVersion(ctx context.Context, minVersion *
 // the factory and by NewAcceptanceTestingKibanaScopedClient.
 func kibanaScopedClientFromAPIClient(a *apiClient) *KibanaScopedClient {
 	return &KibanaScopedClient{
-		kibanaOapi: a.kibanaOapi,
-		fleet:      a.fleet,
-		version:    a.version,
+		kibanaOapi:     a.kibanaOapi,
+		fleet:          a.fleet,
+		version:        a.version,
+		kibanaEndpoint: a.kibanaEndpoint,
+		fleetEndpoint:  a.fleetEndpoint,
 	}
 }
 

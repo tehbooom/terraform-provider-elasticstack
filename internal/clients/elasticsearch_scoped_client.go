@@ -44,11 +44,26 @@ type ElasticsearchScopedClient struct {
 	elasticsearch            *elasticsearch.Client
 	elasticsearchClusterInfo *models.ClusterInfo
 	mu                       sync.Mutex
+	// esEndpoints holds the resolved Elasticsearch endpoint addresses captured
+	// after provider configuration, entity-local overrides, and environment
+	// overrides have been applied. It is used by accessor validation to
+	// distinguish missing endpoint configuration from unexpected nil states.
+	esEndpoints []string
 }
 
 // GetESClient returns the underlying go-elasticsearch client. It satisfies the
 // ESClient sink interface used by internal/clients/elasticsearch/ helpers.
 func (e *ElasticsearchScopedClient) GetESClient() (*elasticsearch.Client, error) {
+	hasEndpoint := false
+	for _, ep := range e.esEndpoints {
+		if ep != "" {
+			hasEndpoint = true
+			break
+		}
+	}
+	if !hasEndpoint {
+		return nil, errors.New("elasticsearch client is not configured: set elasticsearch.endpoints, elasticsearch_connection.endpoints, or ELASTICSEARCH_ENDPOINTS")
+	}
 	if e.elasticsearch == nil {
 		return nil, errors.New("elasticsearch client not found")
 	}
@@ -178,6 +193,7 @@ func elasticsearchScopedClientFromAPIClient(a *apiClient) *ElasticsearchScopedCl
 	return &ElasticsearchScopedClient{
 		elasticsearch:            a.elasticsearch,
 		elasticsearchClusterInfo: a.elasticsearchClusterInfo,
+		esEndpoints:              a.esEndpoints,
 	}
 }
 
