@@ -51,19 +51,16 @@ func convertActionsToModel(ctx context.Context, apiActions []kbapi.SecurityDetec
 			ID:           types.StringValue(apiAction.Id),
 		}
 
-		// Convert params
+		// Convert params: serialize the whole object as normalized JSON.
 		if apiAction.Params != nil {
-			paramsMap := make(map[string]attr.Value)
-			for k, v := range apiAction.Params {
-				if v != nil {
-					paramsMap[k] = types.StringValue(fmt.Sprintf("%v", v))
-				}
+			jsonBytes, err := json.Marshal(map[string]any(apiAction.Params))
+			if err != nil {
+				diags.AddError("Error marshaling action params", err.Error())
+			} else {
+				action.Params = jsontypes.NewNormalizedValue(string(jsonBytes))
 			}
-			paramsValue, paramsDiags := types.MapValue(types.StringType, paramsMap)
-			diags.Append(paramsDiags...)
-			action.Params = paramsValue
 		} else {
-			action.Params = types.MapNull(types.StringType)
+			action.Params = jsontypes.NewNormalizedNull()
 		}
 
 		// Set optional fields

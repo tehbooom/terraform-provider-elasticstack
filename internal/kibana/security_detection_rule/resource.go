@@ -28,6 +28,7 @@ import (
 var _ resource.Resource = &securityDetectionRuleResource{}
 var _ resource.ResourceWithConfigure = &securityDetectionRuleResource{}
 var _ resource.ResourceWithImportState = &securityDetectionRuleResource{}
+var _ resource.ResourceWithUpgradeState = &securityDetectionRuleResource{}
 
 func NewSecurityDetectionRuleResource() resource.Resource {
 	return &securityDetectionRuleResource{}

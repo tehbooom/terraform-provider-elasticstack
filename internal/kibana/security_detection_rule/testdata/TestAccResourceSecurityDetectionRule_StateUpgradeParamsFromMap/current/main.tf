@@ -2,10 +2,6 @@ variable "name" {
   type = string
 }
 
-provider "elasticstack" {
-  kibana {}
-}
-
 variable "connector_name" {
   type = string
 }
@@ -14,9 +10,14 @@ variable "connector_id" {
   type = string
 }
 
+provider "elasticstack" {
+  kibana {}
+}
+
 resource "elasticstack_kibana_action_connector" "test" {
-  name         = var.connector_name
-  connector_id = var.connector_id
+  name              = var.connector_name
+  connector_id      = var.connector_id
+  connector_type_id = ".cases-webhook"
 
   config = jsonencode({
     createIncidentJson                  = "{}"
@@ -34,13 +35,11 @@ resource "elasticstack_kibana_action_connector" "test" {
     user     = "user2"
     password = "password2"
   })
-
-  connector_type_id = ".cases-webhook"
 }
 
 resource "elasticstack_kibana_security_detection_rule" "test" {
   name        = var.name
-  description = "Test security detection rule with connector action"
+  description = "Test state upgrade detection rule"
   type        = "query"
   severity    = "medium"
   risk_score  = 50
@@ -51,23 +50,13 @@ resource "elasticstack_kibana_security_detection_rule" "test" {
   to          = "now"
   interval    = "5m"
   index       = ["logs-*"]
-  namespace   = "connector-action-namespace"
-
-  risk_score_mapping = [
-    {
-      field      = "user.privileged"
-      operator   = "equals"
-      value      = "true"
-      risk_score = 75
-    }
-  ]
 
   actions = [
     {
       action_type_id = ".cases-webhook"
       id             = elasticstack_kibana_action_connector.test.connector_id
       params = jsonencode({
-        message = "CRITICAL EQL Alert: PowerShell process detected"
+        message = "Test state upgrade alert"
       })
       group = "default"
       frequency = {
@@ -78,4 +67,3 @@ resource "elasticstack_kibana_security_detection_rule" "test" {
     }
   ]
 }
-

@@ -574,18 +574,14 @@ func (d Data) actionsToAPI(ctx context.Context) ([]kbapi.SecurityDetectionsAPIRu
 				Id:           action.ID.ValueString(),
 			}
 
-			// Convert params map
-			if typeutils.IsKnown(action.Params) {
-				paramsStringMap := make(map[string]string)
-				paramsDiags := action.Params.ElementsAs(ctx, &paramsStringMap, false)
-				if !paramsDiags.HasError() {
-					paramsMap := make(map[string]any)
-					for k, v := range paramsStringMap {
-						paramsMap[k] = v
-					}
+			// Convert params: unmarshal the JSON string into a free-form map.
+			if typeutils.IsKnown(action.Params) && !action.Params.IsNull() {
+				var paramsMap map[string]any
+				if err := json.Unmarshal([]byte(action.Params.ValueString()), &paramsMap); err != nil {
+					meta.Diags.AddError("Error unmarshaling action params", err.Error())
+				} else {
 					apiAction.Params = kbapi.SecurityDetectionsAPIRuleActionParams(paramsMap)
 				}
-				meta.Diags.Append(paramsDiags...)
 			}
 
 			// Set optional fields

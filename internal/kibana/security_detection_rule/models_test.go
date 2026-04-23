@@ -823,12 +823,9 @@ func TestActionsToAPI(t *testing.T) {
 			{
 				ActionTypeID: types.StringValue(".slack"),
 				ID:           types.StringValue("slack-action-1"),
-				Params: typeutils.MapValueFrom(ctx, map[string]attr.Value{
-					"message": types.StringValue("Alert triggered"),
-					"channel": types.StringValue("#security"),
-				}, types.StringType, path.Root("actions").AtListIndex(0).AtName("params"), &diags),
-				Group: types.StringValue("default"),
-				UUID:  types.StringNull(),
+				Params:       jsontypes.NewNormalizedValue(`{"message":"Alert triggered","channel":"#security"}`),
+				Group:        types.StringValue("default"),
+				UUID:         types.StringNull(),
 				AlertsFilter: typeutils.MapValueFrom(ctx, map[string]attr.Value{
 					"status":   types.StringValue("open"),
 					"severity": types.StringValue("high"),
@@ -852,7 +849,6 @@ func TestActionsToAPI(t *testing.T) {
 	require.Equal(t, ".slack", action.ActionTypeId)
 	require.Equal(t, "slack-action-1", action.Id)
 	require.NotNil(t, action.Params)
-	require.Contains(t, action.Params, "message")
 	require.Equal(t, "Alert triggered", action.Params["message"])
 	require.NotNil(t, action.Group)
 	require.Equal(t, "default", *action.Group)
@@ -909,6 +905,72 @@ func TestConvertActionsToModel(t *testing.T) {
 	require.Equal(t, "email-action-1", action.ID.ValueString())
 	require.Equal(t, "default", action.Group.ValueString())
 	require.Equal(t, "action-uuid-123", action.UUID.ValueString())
+	// params must be valid JSON containing all fields including the array-typed "to"
+	require.JSONEq(t, `{"to":["admin@example.com"],"subject":"Security Alert","message":"Alert details here"}`, action.Params.ValueString())
+}
+
+// TestSlackSubActionParamsRoundTrip verifies that nested objects in action params
+// (e.g. Slack's subActionParams) survive the API→TF→API round-trip via JSON encoding.
+func TestSlackSubActionParamsRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	var diags diag.Diagnostics
+
+	// Simulate what the Kibana API returns for a Slack action: subActionParams is a
+	// nested object, not a plain string.
+	apiActions := []kbapi.SecurityDetectionsAPIRuleAction{
+		{
+			ActionTypeId: ".slack_api",
+			Id:           "slack-connector-1",
+			Params: kbapi.SecurityDetectionsAPIRuleActionParams{
+				"subAction": "postMessage",
+				"subActionParams": map[string]any{
+					"channelIds": []any{"C123456"},
+					"text":       "Security alert fired",
+				},
+			},
+		},
+	}
+
+	// API → TF: params must be stored as a single normalized JSON string.
+	actionsList, convertDiags := convertActionsToModel(ctx, apiActions)
+	require.Empty(t, convertDiags)
+
+	var actions []ActionModel
+	require.Empty(t, actionsList.ElementsAs(ctx, &actions, false))
+	require.Len(t, actions, 1)
+
+	require.JSONEq(t,
+		`{"subAction":"postMessage","subActionParams":{"channelIds":["C123456"],"text":"Security alert fired"}}`,
+		actions[0].Params.ValueString(),
+	)
+
+	// TF model → API: the JSON string is unmarshaled back into a proper object.
+	data := Data{
+		Actions: typeutils.ListValueFrom(ctx, []ActionModel{
+			{
+				ActionTypeID: types.StringValue(".slack_api"),
+				ID:           types.StringValue("slack-connector-1"),
+				Params: jsontypes.NewNormalizedValue(
+					`{"subAction":"postMessage","subActionParams":{"channelIds":["C123456"],"text":"Security alert fired"}}`,
+				),
+				UUID:         types.StringNull(),
+				AlertsFilter: types.MapNull(types.StringType),
+				Frequency:    types.ObjectNull(getActionFrequencyType()),
+			},
+		}, getActionElementType(), path.Root("actions"), &diags),
+	}
+	require.Empty(t, diags)
+
+	apiResult, actionsDiags := data.actionsToAPI(ctx)
+	require.Empty(t, actionsDiags)
+	require.Len(t, apiResult, 1)
+
+	got := apiResult[0].Params
+	require.Equal(t, "postMessage", got["subAction"])
+	gotSAP, ok := got["subActionParams"].(map[string]any)
+	require.True(t, ok, "subActionParams should be map[string]any, got %T", got["subActionParams"])
+	require.Equal(t, []any{"C123456"}, gotSAP["channelIds"])
+	require.Equal(t, "Security alert fired", gotSAP["text"])
 }
 
 func TestUpdateFromRule_UnsupportedType(t *testing.T) {
