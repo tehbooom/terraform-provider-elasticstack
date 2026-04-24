@@ -37,7 +37,6 @@ Empty blocks pull credentials from environment variables. This is the preferred 
 | Elasticsearch | `ELASTICSEARCH_ENDPOINTS` | `ELASTICSEARCH_USERNAME` + `ELASTICSEARCH_PASSWORD`, or `ELASTICSEARCH_API_KEY`, or `ELASTICSEARCH_BEARER_TOKEN` |
 | Kibana | `KIBANA_ENDPOINT` | `KIBANA_USERNAME` + `KIBANA_PASSWORD`, or `KIBANA_API_KEY` |
 | Fleet | `FLEET_ENDPOINT` | `FLEET_USERNAME` + `FLEET_PASSWORD`, `FLEET_API_KEY`, or a service token |
-| APM | `APM_ENDPOINT` | `APM_API_KEY`, `APM_SECRET_TOKEN`, or user/password |
 
 ## Inline credentials (only when env vars are impractical)
 

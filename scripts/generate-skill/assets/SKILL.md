@@ -1,8 +1,8 @@
 ---
 name: terraform-elasticstack-provider
 description: >
-  Author Terraform configuration that uses the elastic/elasticstack provider to manage Elasticsearch, Kibana, Fleet,
-  and APM resources and data sources. Use when writing, reviewing, or refactoring .tf files that reference
+  Author Terraform configuration that uses the elastic/elasticstack provider to manage Elasticsearch, Kibana, and Fleet
+  resources and data sources. Use when writing, reviewing, or refactoring .tf files that reference
   elasticstack_* resources or data sources, or that configure the elasticstack provider block. Covers schema lookup,
   lifecycle semantics, provider connections, and common gotchas.
 compatibility: "Terraform 1.0+, elasticstack ~> 0.14"
@@ -20,7 +20,7 @@ Author correct HCL for the `elastic/elasticstack` Terraform provider. The author
 
 Follow these steps, in order, before emitting HCL.
 
-1. Capture context. Record Terraform version, target provider version, target stack flavor (Elasticsearch Cloud, Serverless, ECK, self-hosted), and which subsystems the user needs (Elasticsearch, Kibana, Fleet, APM). See [references/context-checklist.md](references/context-checklist.md).
+1. Capture context. Record Terraform version, target provider version, target stack flavor (Elasticsearch Cloud, Serverless, ECK, self-hosted), and which subsystems the user needs (Elasticsearch, Kibana, Fleet). See [references/context-checklist.md](references/context-checklist.md).
 2. Pick the entity. Consult [references/index.md](references/index.md) to find the `elasticstack_*` resource or data source that matches the task.
 3. Load the per-entity file from `references/resources/` or `references/data-sources/`. Read the schema block, the lifecycle notes, and the example. Do not guess attribute names.
 4. Emit the provider block. Follow [references/provider.md](references/provider.md) for `required_providers`, auth environment variables, and per-subsystem connection blocks.
@@ -75,7 +75,7 @@ Follow these steps, in order, before emitting HCL.
 
 - Emit a `required_providers` block that pins `elastic/elasticstack` to an exact or `~>` version on every new configuration.
 - Use `jsonencode({...})` for every JSON-shaped attribute (mappings, settings, queries, metadata, role `global` / `metadata`, ingest processors, alert params). Never embed raw JSON strings.
-- Prefer the provider-level `elasticsearch {}` / `kibana {}` / `fleet {}` / `apm {}` blocks. Do not mix them with per-resource `elasticsearch_connection {}` blocks — the latter is deprecated on most resources.
+- Prefer the provider-level `elasticsearch {}` / `kibana {}` / `fleet {}` blocks. Do not mix them with per-resource `elasticsearch_connection {}` blocks — the latter is deprecated on most resources.
 - Source credentials from environment variables or variables. Never inline secrets as string literals in HCL.
 - Treat the per-entity reference files as authoritative for attribute names, types, defaults, and lifecycle. Do not guess from memory.
 - When a user targets Elastic Cloud Serverless, verify the resource is supported there before emitting HCL. See `references/gotchas.md`.

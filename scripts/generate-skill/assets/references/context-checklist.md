@@ -24,7 +24,6 @@ If the user hasn't said, ask — or state an assumption (default: hosted ESS, cu
 - [ ] Elasticsearch — always required to configure the `elasticsearch {}` provider block.
 - [ ] Kibana resources? Configure `kibana {}`.
 - [ ] Fleet resources? Configure `fleet {}` (Fleet server URL + service token).
-- [ ] APM resources? Configure `apm {}`.
 
 ## State backend and delivery
 
