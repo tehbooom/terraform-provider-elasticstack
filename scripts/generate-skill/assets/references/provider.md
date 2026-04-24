@@ -25,7 +25,6 @@ provider "elasticstack" {
   elasticsearch {}
   kibana {}
   fleet {}
-  apm {}
 }
 ```
 
