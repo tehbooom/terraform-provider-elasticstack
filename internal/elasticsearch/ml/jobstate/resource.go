@@ -20,27 +20,25 @@ package jobstate
 import (
 	"context"
 
-	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
+	"github.com/elastic/terraform-provider-elasticstack/internal/resourcecore"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 )
 
+var (
+	_ resource.Resource                = &mlJobStateResource{}
+	_ resource.ResourceWithConfigure   = &mlJobStateResource{}
+	_ resource.ResourceWithImportState = &mlJobStateResource{}
+)
+
 func NewMLJobStateResource() resource.Resource {
-	return &mlJobStateResource{}
+	return &mlJobStateResource{
+		Core: resourcecore.New(resourcecore.ComponentElasticsearch, "ml_job_state"),
+	}
 }
 
 type mlJobStateResource struct {
-	client *clients.ProviderClientFactory
-}
-
-func (r *mlJobStateResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
-	resp.TypeName = req.ProviderTypeName + "_elasticsearch_ml_job_state"
-}
-
-func (r *mlJobStateResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	client, diags := clients.ConvertProviderDataToFactory(req.ProviderData)
-	resp.Diagnostics.Append(diags...)
-	r.client = client
+	*resourcecore.Core
 }
 
 func (r *mlJobStateResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {

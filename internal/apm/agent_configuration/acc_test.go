@@ -85,6 +85,16 @@ func TestAccResourceAgentConfiguration(t *testing.T) {
 					resource.TestCheckResourceAttr("elasticstack_apm_agent_configuration.test_config", "settings.log_level", "debug"),
 				),
 			},
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("update_settings"),
+				ConfigVariables: config.Variables{
+					"service_name": config.StringVariable(serviceName),
+				},
+				ResourceName:      "elasticstack_apm_agent_configuration.test_config",
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
 		},
 	})
 }
@@ -158,6 +168,37 @@ func TestAccResourceAgentConfiguration_kibanaConnection(t *testing.T) {
 					resource.TestCheckResourceAttr("elasticstack_apm_agent_configuration.test_config", "settings.transaction_sample_rate", "0.5"),
 					resource.TestCheckResourceAttr("elasticstack_apm_agent_configuration.test_config", "settings.capture_body", "all"),
 				),
+			},
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				ConfigDirectory:          acctest.NamedTestCaseDirectory(""),
+				ConfigVariables:          testAccAgentConfigurationKibanaConnectionVariables(serviceName),
+				ResourceName:             "elasticstack_apm_agent_configuration.test_config",
+				ImportState:              true,
+				ImportStateVerify:        true,
+				ImportStateVerifyIgnore:  []string{"kibana_connection"},
+			},
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("update"),
+				ConfigVariables:          testAccAgentConfigurationKibanaConnectionVariables(serviceName),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("elasticstack_apm_agent_configuration.test_config", "id", expectedID),
+					resource.TestCheckResourceAttr("elasticstack_apm_agent_configuration.test_config", "service_name", serviceName),
+					resource.TestCheckResourceAttr("elasticstack_apm_agent_configuration.test_config", "agent_name", "java"),
+					resource.TestCheckResourceAttr("elasticstack_apm_agent_configuration.test_config", "settings.%", "2"),
+					resource.TestCheckResourceAttr("elasticstack_apm_agent_configuration.test_config", "settings.transaction_sample_rate", "0.8"),
+					resource.TestCheckResourceAttr("elasticstack_apm_agent_configuration.test_config", "settings.capture_body", "off"),
+				),
+			},
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("update"),
+				ConfigVariables:          testAccAgentConfigurationKibanaConnectionVariables(serviceName),
+				ResourceName:             "elasticstack_apm_agent_configuration.test_config",
+				ImportState:              true,
+				ImportStateVerify:        true,
+				ImportStateVerifyIgnore:  []string{"kibana_connection"},
 			},
 		},
 	})
