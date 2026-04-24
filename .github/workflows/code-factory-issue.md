@@ -807,7 +807,7 @@ tools:
   github:
     toolsets: [issues, pull_requests, repos]
 network:
-  allowed: [defaults, node, elastic.litellm-prod.ai]
+  allowed: [defaults, node, go, elastic.litellm-prod.ai]
 checkout:
   fetch-depth: 0
 safe-outputs:

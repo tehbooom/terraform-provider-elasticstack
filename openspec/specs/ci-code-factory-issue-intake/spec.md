@@ -14,6 +14,16 @@ The repository SHALL define the `code-factory` issue-intake automation as a repo
 - **WHEN** maintainers validate trigger qualification, trust policy, or duplicate detection
 - **THEN** the repository SHALL support focused tests for the extracted helper logic without requiring execution of the compiled workflow
 
+### Requirement: Workflow frontmatter allows required agent ecosystems
+The `code-factory` issue-intake workflow SHALL declare an authored AWF network policy that allows the default allowlist plus the Node and Go ecosystems, and SHALL allow `elastic.litellm-prod.ai` for the Claude engine's Anthropic-compatible proxy access.
+
+#### Scenario: Maintainer inspects workflow frontmatter
+- **WHEN** maintainers inspect the authored `code-factory` issue-intake workflow frontmatter
+- **THEN** `network.allowed` SHALL include `defaults`
+- **AND** `network.allowed` SHALL include `node`
+- **AND** `network.allowed` SHALL include `go`
+- **AND** `network.allowed` SHALL include `elastic.litellm-prod.ai`
+
 ### Requirement: Workflow activates the implementation agent only for qualifying `code-factory` issue events
 The workflow MAY subscribe to GitHub `issues.opened` and `issues.labeled` events, but it SHALL activate the implementation agent only for eligible `code-factory` issue triggers. Eligible triggers SHALL include `issues.labeled` when the newly applied label is exactly `code-factory`, and `issues.opened` when the issue already includes the `code-factory` label at creation time.
 
