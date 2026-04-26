@@ -61,6 +61,7 @@ const (
 	panelTypeRangeSlider             = "range_slider_control"
 	panelTypeSyntheticsStatsOverview = "synthetics_stats_overview"
 	panelTypeSyntheticsMonitors      = "synthetics_monitors"
+	panelTypeLensDashboardApp        = "lens-dashboard-app"
 )
 
 var sloBurnRateDurationRegex = regexp.MustCompile(`^\d+[mhd]$`)
@@ -89,6 +90,7 @@ var panelConfigNames = []string{
 	"range_slider_control_config",
 	"synthetics_stats_overview_config",
 	"synthetics_monitors_config",
+	"lens_dashboard_app_config",
 }
 
 func siblingPanelConfigPathsExcept(name string, names []string) []path.Expression {
@@ -1296,11 +1298,36 @@ func getPanelSchema() schema.NestedAttributeObject {
 					validators.AllowedIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeSyntheticsMonitors}),
 				},
 			},
+			"lens_dashboard_app_config": schema.SingleNestedAttribute{
+				MarkdownDescription: panelConfigDescription(
+					"Configuration for a `lens-dashboard-app` panel (the Kibana Dashboard API `lens-dashboard-app` panel type). "+
+						"Required when `type` is `lens-dashboard-app`. "+
+						"Exactly one of `by_value` (inline chart config) or `by_reference` (saved Lens object via `ref_id` and `references_json`, mapping to the API `references` list) must be set.",
+					"lens_dashboard_app_config",
+					panelConfigNames,
+				),
+				Optional:   true,
+				Attributes: getLensDashboardAppConfigSchema(),
+				Validators: []validator.Object{
+					objectvalidator.ConflictsWith(
+						siblingPanelConfigPathsExcept("lens_dashboard_app_config", panelConfigNames)...,
+					),
+					validators.AllowedIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeLensDashboardApp}),
+					validators.RequiredIfDependentPathExpressionOneOf(path.MatchRelative().AtParent().AtName("type"), []string{panelTypeLensDashboardApp}),
+					lensDashboardAppConfigModeValidator{},
+				},
+			},
 			"config_json": schema.StringAttribute{
-				MarkdownDescription: panelConfigDescription("The configuration of the panel as a JSON string.", "config_json", panelConfigNames),
-				CustomType:          customtypes.NewJSONWithDefaultsType(populatePanelConfigJSONDefaults),
-				Optional:            true,
-				Computed:            true,
+				MarkdownDescription: panelConfigDescription(
+					"The configuration of the panel as a JSON string. "+
+						"Practitioner-authored panel-level `config_json` is valid only when `type` is `markdown` or `vis`. "+
+						"`lens-dashboard-app` and other typed panel kinds use their dedicated blocks (for `lens-dashboard-app`, use `lens_dashboard_app_config`, not panel-level `config_json`).",
+					"config_json",
+					panelConfigNames,
+				),
+				CustomType: customtypes.NewJSONWithDefaultsType(populatePanelConfigJSONDefaults),
+				Optional:   true,
+				Computed:   true,
 				Validators: []validator.String{
 					stringvalidator.ConflictsWith(
 						siblingPanelConfigPathsExcept("config_json", panelConfigNames)...,
@@ -1309,6 +1336,121 @@ func getPanelSchema() schema.NestedAttributeObject {
 				},
 			},
 		},
+	}
+}
+
+// getLensDashboardAppConfigSchema returns attributes for the lens_dashboard_app_config block.
+func getLensDashboardAppConfigSchema() map[string]schema.Attribute {
+	return map[string]schema.Attribute{
+		"by_value": schema.SingleNestedAttribute{
+			MarkdownDescription: "Inline by-value `lens-dashboard-app` configuration. " +
+				"The nested `config_json` value is sent as the Kibana API panel `config` object " +
+				"(distinct from panel-level `config_json` on the panel).",
+			Optional: true,
+			Attributes: map[string]schema.Attribute{
+				"config_json": schema.StringAttribute{
+					MarkdownDescription: "Required normalized JSON object for the by-value Lens chart `config` (for example an ES|QL or NoESQL chart shape).",
+					Required:            true,
+					CustomType:          jsontypes.NormalizedType{},
+				},
+			},
+		},
+		"by_reference": schema.SingleNestedAttribute{
+			MarkdownDescription: "By-reference `lens-dashboard-app` configuration: link a saved Lens visualization using `ref_id`, optional `references_json`, and a required `time_range`.",
+			Optional:            true,
+			Attributes: map[string]schema.Attribute{
+				"ref_id": schema.StringAttribute{
+					MarkdownDescription: "Reference name in the API `ref_id` field. When `references_json` is set, `ref_id` typically should match a `name` in that list so the link resolves as expected.",
+					Required:            true,
+				},
+				"references_json": schema.StringAttribute{
+					MarkdownDescription: "Optional normalized JSON array of `{ id, name, type }` saved-object references, matching the API `references` list (for example wiring a `lens` saved object to `ref_id`).",
+					Optional:            true,
+					CustomType:          jsontypes.NormalizedType{},
+				},
+				"title": schema.StringAttribute{
+					MarkdownDescription: "Optional panel title.",
+					Optional:            true,
+				},
+				"description": schema.StringAttribute{
+					MarkdownDescription: "Optional panel description.",
+					Optional:            true,
+				},
+				"hide_title": schema.BoolAttribute{
+					MarkdownDescription: "When true, suppresses the panel title.",
+					Optional:            true,
+				},
+				"hide_border": schema.BoolAttribute{
+					MarkdownDescription: "When true, suppresses the panel border.",
+					Optional:            true,
+				},
+				"drilldowns_json": schema.StringAttribute{
+					MarkdownDescription: "Optional JSON array for the API `drilldowns` field (polymorphic drilldown shapes).",
+					Optional:            true,
+					CustomType:          jsontypes.NormalizedType{},
+				},
+				"time_range": schema.SingleNestedAttribute{
+					MarkdownDescription: "Required time range for the by-reference `lens-dashboard-app` config.",
+					Required:            true,
+					Attributes: map[string]schema.Attribute{
+						"from": schema.StringAttribute{
+							MarkdownDescription: "Range start, matching the Kibana time range `from` field.",
+							Required:            true,
+						},
+						"to": schema.StringAttribute{
+							MarkdownDescription: "Range end, matching the Kibana time range `to` field.",
+							Required:            true,
+						},
+						"mode": schema.StringAttribute{
+							MarkdownDescription: "Optional time range mode. When set, must be `absolute` or `relative`.",
+							Optional:            true,
+							Validators: []validator.String{
+								stringvalidator.OneOf("absolute", "relative"),
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// lensDashboardAppConfigModeValidator enforces that exactly one of by_value or by_reference is set.
+var _ validator.Object = lensDashboardAppConfigModeValidator{}
+
+type lensDashboardAppConfigModeValidator struct{}
+
+func (v lensDashboardAppConfigModeValidator) Description(_ context.Context) string {
+	return "Ensures exactly one of `by_value` or `by_reference` is set inside `lens_dashboard_app_config`."
+}
+
+func (v lensDashboardAppConfigModeValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v lensDashboardAppConfigModeValidator) ValidateObject(_ context.Context, req validator.ObjectRequest, resp *validator.ObjectResponse) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+	attrs := req.ConfigValue.Attributes()
+	byValue := attrs["by_value"]
+	byRef := attrs["by_reference"]
+	valueSet := func(av attr.Value) bool {
+		return av != nil && !av.IsNull() && !av.IsUnknown()
+	}
+	byValueSet := valueSet(byValue)
+	byRefSet := valueSet(byRef)
+	if byValueSet && byRefSet {
+		resp.Diagnostics.AddAttributeError(req.Path, "Invalid lens_dashboard_app_config", "Exactly one of `by_value` or `by_reference` must be set inside `lens_dashboard_app_config`, not both.")
+		return
+	}
+	if !byValueSet && !byRefSet {
+		byValueUnknown := byValue != nil && byValue.IsUnknown()
+		byRefUnknown := byRef != nil && byRef.IsUnknown()
+		if byValueUnknown || byRefUnknown {
+			return
+		}
+		resp.Diagnostics.AddAttributeError(req.Path, "Invalid lens_dashboard_app_config", "Exactly one of `by_value` or `by_reference` must be set inside `lens_dashboard_app_config`.")
 	}
 }
 
