@@ -69,6 +69,54 @@ func TestAccResourceDashboardLensDashboardAppByValue(t *testing.T) {
 	})
 }
 
+// TestAccResourceDashboardLensDashboardAppByValueTypedMetric applies a typed by-value
+// `metric_chart_config` (not raw by_value.config_json) twice with an empty second plan, and
+// ensures after apply+read, panel-level `config_json` and by_value `config_json` are not set
+// (4.3/4.4). Import has no prior typed selection, so read-back may populate by_value
+// `config_json`; the import step only asserts panel `config_json` is still absent.
+func TestAccResourceDashboardLensDashboardAppByValueTypedMetric(t *testing.T) {
+	dashboardTitle := "Acc lens app typed m " + sdkacctest.RandStringFromCharSet(4, sdkacctest.CharSetAlphaNum)
+	dataSourceRe := regexp.MustCompile(`"index_pattern"\s*:\s*"metrics-\*"`)
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck: func() { acctest.PreCheck(t) },
+		Steps: []resource.TestStep{
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(minDashboardAPISupport),
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("basic"),
+				ConfigVariables:          config.Variables{"dashboard_title": config.StringVariable(dashboardTitle)},
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("elasticstack_kibana_dashboard.test", "panels.0.type", "lens-dashboard-app"),
+					resource.TestMatchResourceAttr("elasticstack_kibana_dashboard.test", "panels.0.lens_dashboard_app_config.by_value.metric_chart_config.data_source_json", dataSourceRe),
+					resource.TestCheckNoResourceAttr("elasticstack_kibana_dashboard.test", "panels.0.config_json"),
+					resource.TestCheckNoResourceAttr("elasticstack_kibana_dashboard.test", "panels.0.lens_dashboard_app_config.by_value.config_json"),
+				),
+			},
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(minDashboardAPISupport),
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("basic"),
+				ConfigVariables:          config.Variables{"dashboard_title": config.StringVariable(dashboardTitle)},
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
+				},
+			},
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(minDashboardAPISupport),
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("basic"),
+				ConfigVariables:          config.Variables{"dashboard_title": config.StringVariable(dashboardTitle)},
+				ResourceName:             "elasticstack_kibana_dashboard.test",
+				ImportState:              true,
+				ImportStateVerify:        false,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckNoResourceAttr("elasticstack_kibana_dashboard.test", "panels.0.config_json"),
+				),
+			},
+		},
+	})
+}
+
 func TestAccResourceDashboardLensDashboardAppByReference(t *testing.T) {
 	dashboardTitle := "Acc lens app by-ref " + sdkacctest.RandStringFromCharSet(4, sdkacctest.CharSetAlphaNum)
 	refWireID := regexp.MustCompile(`aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee`)
@@ -171,6 +219,7 @@ func TestAccResourceDashboardLensDashboardAppPlan(t *testing.T) {
 	invalidTimeMode := regexp.MustCompile(`weekly|one of|absolute|relative|mode`)
 	bothSubblocks := regexp.MustCompile(`not both`)
 	neitherSubblock := regexp.MustCompile(`Exactly one of`)
+	byValueSourceInvalid := regexp.MustCompile(`Invalid lens_dashboard_app_config\.by_value`)
 	panelConfigNotAllowed := regexp.MustCompile(`config_json|can only be set when|markdown|vis`)
 	configJSONWithLens := regexp.MustCompile(`Invalid Configuration|conflict`)
 
@@ -207,6 +256,12 @@ func TestAccResourceDashboardLensDashboardAppPlan(t *testing.T) {
 			{ProtoV6ProviderFactories: acctest.Providers, SkipFunc: versionutils.CheckIfVersionIsUnsupported(minDashboardAPISupport),
 				ConfigDirectory: acctest.NamedTestCaseDirectory("panel_config_json_with_lens_block"), ConfigVariables: config.Variables{"dashboard_title": config.StringVariable(dashboardTitle)},
 				PlanOnly: true, ExpectError: configJSONWithLens},
+			{ProtoV6ProviderFactories: acctest.Providers, SkipFunc: versionutils.CheckIfVersionIsUnsupported(minDashboardAPISupport),
+				ConfigDirectory: acctest.NamedTestCaseDirectory("by_value_no_source"), ConfigVariables: config.Variables{"dashboard_title": config.StringVariable(dashboardTitle)},
+				PlanOnly: true, ExpectError: byValueSourceInvalid},
+			{ProtoV6ProviderFactories: acctest.Providers, SkipFunc: versionutils.CheckIfVersionIsUnsupported(minDashboardAPISupport),
+				ConfigDirectory: acctest.NamedTestCaseDirectory("by_value_config_json_and_metric_typed"), ConfigVariables: config.Variables{"dashboard_title": config.StringVariable(dashboardTitle)},
+				PlanOnly: true, ExpectError: byValueSourceInvalid},
 		},
 	})
 }
