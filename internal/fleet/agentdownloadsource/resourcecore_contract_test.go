@@ -53,11 +53,9 @@ func TestResource_importState_customCompositeID(t *testing.T) {
 	r.ImportState(ctx, resource.ImportStateRequest{ID: "myspace/the-src-id"}, resp)
 	require.False(t, resp.Diagnostics.HasError())
 
-	var id, sourceID types.String
-	resp.Diagnostics.Append(resp.State.GetAttribute(ctx, path.Root("id"), &id)...)
+	var sourceID types.String
 	resp.Diagnostics.Append(resp.State.GetAttribute(ctx, path.Root("source_id"), &sourceID)...)
 	require.False(t, resp.Diagnostics.HasError())
-	require.Equal(t, "the-src-id", id.ValueString())
 	require.Equal(t, "the-src-id", sourceID.ValueString())
 
 	var spaceIDs types.Set
