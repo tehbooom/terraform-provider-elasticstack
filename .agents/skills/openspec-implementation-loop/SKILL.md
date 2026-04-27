@@ -253,13 +253,13 @@ Orchestrate an implementation loop around a single OpenSpec change.
     - record the PR number or URL
 
     **PR polling loop**:
-    - use `.agents/skills/openspec-implementation-loop/check-pr-state.py <pr>` on every poll; it runs the required `gh` commands in one place and returns a single JSON payload covering PR checks, reviews, issue comments, review comments, and unresolved review threads
+    - use `.agents/skills/openspec-implementation-loop/scripts/check-pr-state.py <pr>` on every poll; it runs the required `gh` commands in one place and returns a single JSON payload covering PR checks, reviews, issue comments, review comments, and unresolved review threads
     - after each push, restart the PR polling loop from the beginning for the new PR head commit
     - on every poll, inspect both the check summary and the review summary from that script output; do not treat comment polling as a separate schedule
 
     Example:
     ```bash
-    .agents/skills/openspec-implementation-loop/check-pr-state.py <pr>
+    .agents/skills/openspec-implementation-loop/scripts/check-pr-state.py <pr>
     ```
 
     **Polling cadence**:

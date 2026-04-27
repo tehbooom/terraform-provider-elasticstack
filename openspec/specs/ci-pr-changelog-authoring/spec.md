@@ -2,72 +2,84 @@
 
 ## Purpose
 TBD - created by archiving change pr-centric-changelog-generation. Update Purpose after archive.
+
 ## Requirements
-### Requirement: Workflow artifacts and compilation
-The PR changelog authoring workflow SHALL be authored from a repository template under `.github/workflows-src/` that generates a GitHub Agentic Workflow markdown file under `.github/workflows/` via `scripts/compile-workflow-sources/main.go`. The repository SHALL commit the generated `.md` workflow and the compiled `.lock.yml` produced by `gh aw compile`. Contributors SHALL NOT hand-edit the generated `.md` or `.lock.yml` artifacts.
 
-#### Scenario: Source and compiled artifacts stay paired
-- **WHEN** maintainers change the PR changelog authoring workflow behavior
-- **THEN** the `.github/workflows-src/` template, generated `.md` workflow, and compiled `.lock.yml` SHALL match the committed compiler output
+### Requirement: Trigger on pull request open, update, or label change
+The workflow SHALL trigger on `pull_request_target` events with types `opened`, `synchronize`, `edited`, `labeled`, and `unlabeled`. It SHALL evaluate the changelog contract immediately on each trigger without waiting for any other workflow to complete.
 
-### Requirement: Trigger on `Build/Lint/Test` workflow completion
-The workflow SHALL run from a `workflow_run` trigger for the repository workflow named `Build/Lint/Test` and SHALL continue only when the source workflow run completed for a pull-request event.
+#### Scenario: Check runs on PR open
+- **WHEN** a pull request is opened against the base repository
+- **THEN** the workflow SHALL evaluate the changelog section within the same CI round as other immediate checks
 
-#### Scenario: Pull-request CI completion is eligible for gating
-- **WHEN** the `Build/Lint/Test` workflow completes for a `pull_request` event
-- **THEN** the PR changelog authoring workflow SHALL continue to deterministic pull-request resolution and gating
+#### Scenario: Check re-runs on new push
+- **WHEN** new commits are pushed to an open pull request
+- **THEN** the workflow SHALL re-evaluate the changelog section and update any existing comment accordingly
 
-#### Scenario: Non-pull-request workflow run is skipped
-- **WHEN** the `Build/Lint/Test` workflow completes for a non-`pull_request` event such as `push` or `workflow_dispatch`
-- **THEN** the PR changelog authoring workflow SHALL NOT invoke changelog validation or authoring for that run
+#### Scenario: Check re-runs when PR body is edited
+- **WHEN** the pull request body is edited (e.g., the author adds or corrects the `## Changelog` section)
+- **THEN** the workflow SHALL re-evaluate the changelog section and update any existing comment accordingly
 
-### Requirement: Deterministic pull-request resolution and opt-out gate
-Before agent reasoning starts, deterministic repository-authored steps SHALL resolve the pull request associated with the triggering `workflow_run`. The workflow SHALL skip agent authoring when the resolved pull request carries the `no-changelog` label.
+#### Scenario: Check re-runs when label is applied
+- **WHEN** a label is applied to an open pull request
+- **THEN** the workflow SHALL re-evaluate the changelog section, allowing a freshly applied `no-changelog` label to immediately pass the check
 
-#### Scenario: `no-changelog` label suppresses authoring
-- **WHEN** deterministic resolution finds the triggering pull request and that pull request carries the `no-changelog` label
-- **THEN** the workflow SHALL treat the pull request as explicitly exempt from changelog authoring
+#### Scenario: Check re-runs when label is removed
+- **WHEN** a label is removed from an open pull request (e.g., `no-changelog` is removed)
+- **THEN** the workflow SHALL immediately re-evaluate the changelog section, requiring the PR body to contain a valid `## Changelog` section if no `no-changelog` label remains
 
-#### Scenario: Missing pull request fails gating
-- **WHEN** deterministic resolution cannot identify exactly one pull request for the triggering workflow run
-- **THEN** the workflow SHALL fail gating without invoking the agent, with the deterministic resolution step exiting non-zero and emitting an error message prefixed with `PR_CHANGELOG_GATING:`
+### Requirement: `no-changelog` label suppresses the check
+The workflow SHALL pass immediately when the pull request carries the `no-changelog` label, without parsing or validating the PR body.
+
+#### Scenario: `no-changelog` label causes immediate pass
+- **WHEN** the pull request labels include `no-changelog`
+- **THEN** the workflow SHALL succeed without inspecting the PR body
 
 ### Requirement: Existing changelog section is validated deterministically
-When the pull request body already contains a `## Changelog` section, deterministic repository-authored validation SHALL verify the contract shape before the workflow reports success. The validator SHALL require `Customer impact` to be exactly one of `none`, `fix`, `enhancement`, or `breaking`; these values are case-sensitive and SHALL be matched literally. The validator SHALL require a `Summary` line whenever `Customer impact` is not `none`, and a non-empty optional `### Breaking changes` subsection when that subsection is present.
+The workflow SHALL parse and validate the `## Changelog` section from the pull request body using `parseChangelogSectionFull` and `validateChangelogSectionFull`. The validator SHALL require `Customer impact` to be exactly one of `none`, `fix`, `enhancement`, or `breaking` (case-sensitive). The validator SHALL require a `Summary` line when `Customer impact` is not `none`. The validator SHALL reject a `### Breaking changes` subsection that is present but empty, and SHALL require that subsection when `Customer impact` is `breaking`.
 
-#### Scenario: Valid changelog section suppresses the agent
-- **WHEN** the pull request body already contains a valid `## Changelog` section
-- **THEN** the workflow SHALL complete successfully without invoking the agent
+When validation fails, the workflow SHALL post or update a PR comment identifying the failure reason. When validation passes, the workflow SHALL update any existing failure comment to indicate the check passed.
 
-#### Scenario: Malformed changelog section fails validation
-- **WHEN** the pull request body contains a `## Changelog` section that does not satisfy the deterministic contract
-- **THEN** the workflow SHALL fail with a clear validation error instead of overwriting the existing section
+#### Scenario: Valid changelog section passes the check
+- **WHEN** the pull request body contains a `## Changelog` section that satisfies all validation rules
+- **THEN** the workflow SHALL succeed, and if a prior failure comment exists it SHALL be updated to a "check passed" message
+
+#### Scenario: Malformed changelog section fails with comment
+- **WHEN** the pull request body contains a `## Changelog` section that does not satisfy the validation rules
+- **THEN** the workflow SHALL fail and SHALL upsert a PR comment listing each validation error
+
+#### Scenario: Missing changelog section fails with comment
+- **WHEN** the pull request body contains no `## Changelog` section and the PR does not carry the `no-changelog` label
+- **THEN** the workflow SHALL fail and SHALL upsert a PR comment stating that no `## Changelog` section was found
 
 ### Requirement: Breaking changes subsection may be free-form markdown
-Within the `## Changelog` contract, the optional `### Breaking changes` subsection SHALL allow free-form markdown content, including prose, bullet lists, and fenced code blocks. Deterministic validation SHALL treat that subsection as a delimited markdown block rather than as a structured bullet schema.
+Within the `## Changelog` contract, the optional `### Breaking changes` subsection SHALL allow free-form markdown content, including prose, bullet lists, and fenced code blocks. Validation SHALL treat that subsection as a delimited markdown block rather than a structured schema.
 
 #### Scenario: Breaking changes block contains fenced code
 - **WHEN** the pull request body includes `### Breaking changes` with fenced code blocks or migration prose
-- **THEN** the workflow SHALL accept that subsection as valid markdown content when the block is non-empty
+- **THEN** the workflow SHALL accept that subsection as valid when the block is non-empty
 
-### Requirement: Missing changelog sections are drafted from PR metadata
-When the resolved pull request lacks a `## Changelog` section and is not exempt via `no-changelog`, the agent SHALL draft the missing section from the pull request title and description and SHALL update the pull request body with that drafted section.
+### Requirement: Comment upsert uses a stable hidden marker
+The workflow SHALL identify its own PR comments by the hidden HTML marker `<!-- pr-changelog-check -->` embedded in the comment body. It SHALL update an existing marked comment rather than creating a new one, preventing comment accumulation on repeated pushes.
 
-#### Scenario: Missing changelog section is added
-- **WHEN** deterministic gating concludes the pull request requires a changelog section and none is present
-- **THEN** the workflow SHALL invoke the agent to draft the `## Changelog` section and update the pull request body with the result
+#### Scenario: Repeated failures update rather than accumulate
+- **WHEN** the changelog check fails on multiple successive pushes to the same pull request
+- **THEN** only one failure comment from the workflow SHALL be present; each failure SHALL update the existing comment rather than posting a new one
 
-### Requirement: Minimal permissions are available to deterministic gating and PR updates
-The workflow SHALL request only the minimal permissions needed to resolve the triggering pull request, validate its body, and update that body when necessary. At minimum the workflow SHALL grant `contents: read` and `pull-requests: write`, and those scopes SHALL be available to the deterministic pre-agent steps rather than only to the agent phase.
+#### Scenario: Pass after failure updates the failure comment
+- **WHEN** a pull request that previously had a workflow failure comment is updated to include a valid `## Changelog` section
+- **THEN** the workflow SHALL update the existing failure comment to indicate the check passed
 
-#### Scenario: Deterministic pre-agent steps can update PR body
-- **WHEN** deterministic resolution, validation, or PR-body update steps execute
-- **THEN** the workflow permissions SHALL allow those steps to read repository-authored context and update the pull request body without requiring broader repository write scopes
+### Requirement: Minimal permissions for validation and PR comments
+The workflow SHALL request only the permissions needed to read pull request metadata and post or update PR comments. At minimum the workflow SHALL declare `pull-requests: write` and `issues: write`. The `issues: write` scope is required because PR comments are created and updated via the `issues` REST API endpoints (`github.rest.issues.listComments`, `github.rest.issues.createComment`, `github.rest.issues.updateComment`).
 
-### Requirement: `workflow_run` execution remains metadata-only
-Because the workflow runs from `workflow_run`, it SHALL NOT checkout or execute code from the pull-request head branch. Deterministic gating, validation, and agent authoring SHALL operate only on pull-request metadata and repository-authored prompt context.
+#### Scenario: Workflow can comment on fork PRs
+- **WHEN** the triggering pull request originates from a fork repository
+- **THEN** the workflow SHALL have sufficient permissions to post or update a comment on that pull request
 
-#### Scenario: PR workflow never checks out untrusted code
-- **WHEN** the workflow evaluates or updates the changelog contract for a pull request
-- **THEN** it SHALL do so without checking out or executing code from the pull-request branch
+### Requirement: Workflow does not check out pull request code
+The workflow SHALL NOT check out or execute any code from the pull request branch. It SHALL operate exclusively on pull request metadata available in the event payload.
 
+#### Scenario: Fork PR is evaluated without code execution
+- **WHEN** the triggering pull request originates from a fork repository
+- **THEN** the workflow SHALL read only `context.payload.pull_request` metadata and post a comment via the REST API, without checking out the fork's code

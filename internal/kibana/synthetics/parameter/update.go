@@ -35,7 +35,7 @@ func (r *Resource) Update(ctx context.Context, request resource.UpdateRequest, r
 		return
 	}
 
-	apiClient, diags := r.client.GetKibanaClient(ctx, state.KibanaConnection)
+	apiClient, diags := r.Client().GetKibanaClient(ctx, state.KibanaConnection)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return
@@ -48,7 +48,7 @@ func (r *Resource) Update(ctx context.Context, request resource.UpdateRequest, r
 
 	resourceID := state.ID.ValueString()
 
-	compositeID, dg := tryReadCompositeID(resourceID)
+	compositeID, dg := synthetics.TryReadCompositeID(resourceID)
 	response.Diagnostics.Append(dg...)
 	if response.Diagnostics.HasError() {
 		return

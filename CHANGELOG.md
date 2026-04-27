@@ -1,8 +1,62 @@
 ## [Unreleased]
 
+### Breaking changes
+
+
+#### `elasticstack_kibana_security_detection_rule` action `params` format change
+
+Previously `elasticstack_kibana_security_detection_rule` used a map of strings for action parameters. This caused issues with actions requiring non-string based parameters (see https://github.com/elastic/terraform-provider-elasticstack/issues/2339 for an example). This has been changed to a single JSON string value which supports arbitrary param values. 
+
+Previously
+
+```hcl
+resource "elasticstack_kibana_security_detection_rule" "test" {
+...
+
+  actions = [
+    {
+...
+      params = {
+        message = "Test state upgrade alert"
+      }
+...
+  ]
+}
+```
+
+becomes 
+
+```hcl
+resource "elasticstack_kibana_security_detection_rule" "test" {
+...
+
+  actions = [
+    {
+...
+      params = jsonencode({
+        message = "Test state upgrade alert"
+      })
+...
+  ]
+}
+```
+
 ### Changes
 
 - Add `elasticstack_fleet_proxy` resource ([#2364](https://github.com/elastic/terraform-provider-elasticstack/pull/2364))
+- elasticstack_fleet_integration now detects out-of-band package upgrades and downgrades during refresh by consulting InstallationInfo.Version; terraform plan surfaces the drift instead of reporting "No changes". ([#2447](https://github.com/elastic/terraform-provider-elasticstack/pull/2447))
+- elasticstack_elasticsearch_security_role now detects out-of-band drift on description, metadata, and other attributes during refresh; terraform plan no longer silently returns "No changes" when a role is modified outside Terraform. ([#2446](https://github.com/elastic/terraform-provider-elasticstack/pull/2446))
+- New `elasticstack_fleet_custom_integration` resource for uploading and managing locally-built Fleet integration packages via the EPM binary upload API ([#2387](https://github.com/elastic/terraform-provider-elasticstack/pull/2387))
+- Change `elasticstack_kibana_security_detection_rule.actions[].params` to a JSON string rather than a map of string values. This allows setting arbitrary, nested param values ([#2340](https://github.com/elastic/terraform-provider-elasticstack/pull/2340))
+- Add import support to the elasticstack_elasticsearch_enrich_policy resource ([#2427](https://github.com/elastic/terraform-provider-elasticstack/pull/2427))
+- Add ssl.verification_mode attribute to the elasticstack_fleet_output ssl block ([#2415](https://github.com/elastic/terraform-provider-elasticstack/pull/2415))
+
+## [0.14.5] - 2026-04-21
+
+- Fix `elasticstack_kibana_slo.metric_custom_indicator` to support doc_count aggregation by making field optional and sending the no-field API variant ([#2394](https://github.com/elastic/terraform-provider-elasticstack/pull/2394))
+- Fix "provider produced inconsistent result after apply" for SLO resources when objective target, timeslice target, or histogram range from/to values are not exactly representable in float32 ([#2401](https://github.com/elastic/terraform-provider-elasticstack/pull/2401))
+- Add `elasticstack_fleet_agent_download_source` resource ([#2081](https://github.com/elastic/terraform-provider-elasticstack/pull/2081))
+>>>>>>> main
 
 ## [0.14.4] - 2026-04-20
 
@@ -278,7 +332,7 @@ alias = [
   - Gracefully handle response action with no provided `frequency`
   - Add validation for required `anomaly_threshold` field in anomaly detection rules
   - Add support for `timeline_id` / `timeline_title` fields
-  - Gracefully handle `threat_query` not being provided for `threat_match` ule
+  - Gracefully handle `threat_query` not being provided for `threat_match` rule
 
 ## [0.11.19] - 2025-10-22
 
@@ -296,7 +350,7 @@ Version 0.11.19 is equivalent to 0.12.1. It is being released to help mitigate i
   - Gracefully handle response action with no provided `frequency`
   - Add validation for required `anomaly_threshold` field in anomaly detection rules
   - Add support for `timeline_id` / `timeline_title` fields
-  - Gracefully handle `threat_query` not being provided for `threat_match` ule
+  - Gracefully handle `threat_query` not being provided for `threat_match` rule
 
 ## [0.11.18] - 2025-10-10
 
@@ -789,7 +843,8 @@ resource "elasticstack_fleet_output" "output" {
 - Initial set of docs
 - CI integration
 
-[Unreleased]: https://github.com/elastic/terraform-provider-elasticstack/compare/v0.14.4...HEAD
+[Unreleased]: https://github.com/elastic/terraform-provider-elasticstack/compare/v0.14.5...HEAD
+[0.14.5]: https://github.com/elastic/terraform-provider-elasticstack/compare/v0.14.4...v0.14.5
 [0.14.4]: https://github.com/elastic/terraform-provider-elasticstack/compare/v0.14.3...v0.14.4
 [0.14.3]: https://github.com/elastic/terraform-provider-elasticstack/compare/v0.14.2...v0.14.3
 [0.14.2]: https://github.com/elastic/terraform-provider-elasticstack/compare/v0.14.1...v0.14.2

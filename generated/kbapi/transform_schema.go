@@ -600,7 +600,6 @@ var transformers = []TransformFunc{
 	fixGetSpacesParams,
 	fixSpaceResponseSchemas,
 	fixSecurityExceptionListItems,
-	fixSecurityEntityStoreEntityTypeParams,
 	removeDuplicateOneOfRefs,
 	transformRemoveAnyOfWhenOneOfPresent,
 	fixDashboardPanelItemRefs,
@@ -608,6 +607,7 @@ var transformers = []TransformFunc{
 	fixSyntheticsMonitorModels,
 	fixSyntheticsMonitorParams,
 	fixAlertingRuleBody,
+	fixSloFloatFormats,
 	transformRemoveExamples,
 	transformRemoveUnusedComponents,
 	transformOmitEmptyNullable,
@@ -886,6 +886,22 @@ func transformKibanaPaths(schema *Schema) {
 		"responses.200.content.application/json.schema",
 		Map{"$ref": "#/components/schemas/Synthetics_getPrivateLocation"},
 	)
+	syntheticsPrivateLocationsPath.Post.Set(
+		"requestBody.content.application/json.schema.properties.geo.properties.lat.format",
+		"double",
+	)
+	syntheticsPrivateLocationsPath.Post.Set(
+		"requestBody.content.application/json.schema.properties.geo.properties.lon.format",
+		"double",
+	)
+	schema.Components.Set(
+		"schemas.Synthetics_getPrivateLocation.properties.geo.properties.lat.format",
+		"double",
+	)
+	schema.Components.Set(
+		"schemas.Synthetics_getPrivateLocation.properties.geo.properties.lon.format",
+		"double",
+	)
 
 	schema.Components.CreateRef(schema, "Data_views_data_view_response_object_inner", "schemas.Data_views_data_view_response_object.properties.data_view")
 	schema.Components.CreateRef(schema, "Data_views_sourcefilter_item", "schemas.Data_views_sourcefilters.items")
@@ -1134,50 +1150,6 @@ func fixSecurityExceptionListItems(schema *Schema) {
 
 	postExceptionListItem := exceptionListItems.MustGetEndpoint("post")
 	postExceptionListItem.CreateRef(schema, "Security_Exceptions_API_CreateExceptionListItem", "requestBody.content.application/json.schema")
-}
-
-func fixSecurityEntityStoreEntityTypeParams(schema *Schema) {
-	entityTypePathParam := func() Map {
-		return Map{
-			"example":  "user",
-			"in":       "path",
-			"name":     "entityType",
-			"required": true,
-			"schema": Map{
-				"$ref": "#/components/schemas/Security_Entity_Analytics_API_EntityType",
-			},
-		}
-	}
-
-	addEntityTypePathParam := func(endpoint Map) {
-		params, ok := endpoint.GetSlice("parameters")
-		if !ok {
-			endpoint.Set("parameters", Slice{entityTypePathParam()})
-			return
-		}
-
-		for _, param := range params {
-			paramMap, ok := param.(Map)
-			if !ok {
-				if rawMap, ok := param.(map[string]any); ok {
-					paramMap = Map(rawMap)
-				} else {
-					continue
-				}
-			}
-			name, _ := paramMap["name"].(string)
-			in, _ := paramMap["in"].(string)
-			if name == "entityType" && in == "path" {
-				return
-			}
-		}
-
-		endpoint.Set("parameters", append(Slice{entityTypePathParam()}, params...))
-	}
-
-	securityEntityStorePath := schema.MustGetPath("/api/security/entity_store/entities/{entityType}")
-	addEntityTypePathParam(securityEntityStorePath.MustGetEndpoint("post"))
-	addEntityTypePathParam(securityEntityStorePath.MustGetEndpoint("put"))
 }
 
 func removeDuplicateOneOfRefs(schema *Schema) {
@@ -1498,6 +1470,36 @@ func fixAlertingRuleBody(schema *Schema) {
 	postEndpoint.CreateRef(schema, "Alerting_Rule_API_Body_Union", "requestBody.content.application/json.schema")
 }
 
+// fixSloFloatFormats adds format: double to all floating-point fields in SLO
+// schemas that the Terraform provider surfaces as Float64 attributes. Without
+// an explicit format the Kibana spec uses "type: number" which oapi-codegen
+// maps to float32, causing silent precision loss when users write values such
+// as 0.999 (see https://github.com/elastic/terraform-provider-elasticstack/issues/2396).
+// format: double instructs oapi-codegen to emit float64 instead, preserving
+// full IEEE-754 double precision throughout the read/write cycle.
+func fixSloFloatFormats(schema *Schema) {
+	// Objective target and timeslice target (the fields reported in issue #2396)
+	schema.Components.Set("schemas.SLOs_objective.properties.target.format", "double")
+	schema.Components.Set("schemas.SLOs_objective.properties.timesliceTarget.format", "double")
+
+	// Histogram range indicator good/total from & to
+	const histGoodFrom = "schemas.SLOs_indicator_properties_histogram.properties.params.properties.good.properties.from.format"
+	const histGoodTo = "schemas.SLOs_indicator_properties_histogram.properties.params.properties.good.properties.to.format"
+	const histTotalFrom = "schemas.SLOs_indicator_properties_histogram.properties.params.properties.total.properties.from.format"
+	const histTotalTo = "schemas.SLOs_indicator_properties_histogram.properties.params.properties.total.properties.to.format"
+	schema.Components.Set(histGoodFrom, "double")
+	schema.Components.Set(histGoodTo, "double")
+	schema.Components.Set(histTotalFrom, "double")
+	schema.Components.Set(histTotalTo, "double")
+
+	// APM latency threshold (milliseconds)
+	schema.Components.Set("schemas.SLOs_indicator_properties_apm_latency.properties.params.properties.threshold.format", "double")
+
+	// Timeslice metric threshold and percentile
+	schema.Components.Set("schemas.SLOs_indicator_properties_timeslice_metric.properties.params.properties.metric.properties.threshold.format", "double")
+	schema.Components.Set("schemas.SLOs_timeslice_metric_percentile_metric.properties.percentile.format", "double")
+}
+
 func fixAlertingRuleParams(schema *Schema) {
 	postEndpoint := schema.MustGetPath("/api/alerting/rule/{id}").MustGetEndpoint("post")
 	postEndpoint.CreateRef(schema, "Alerting_Rule_API_Params", "requestBody.content.application/json.schema.anyOf.1.properties.params")
@@ -1559,8 +1561,8 @@ func fixSyntheticsMonitorModels(schema *Schema) {
 	schema.Components.Set("schemas.geo_pos", Map{
 		"additionalProperties": false,
 		"properties": Map{
-			"lat": Map{"type": "number"},
-			"lon": Map{"type": "number"},
+			"lat": Map{"format": "double", "type": "number"},
+			"lon": Map{"format": "double", "type": "number"},
 		},
 		"type": "object",
 	})

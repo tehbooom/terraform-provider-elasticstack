@@ -212,7 +212,7 @@ func Test_mapPanelsFromAPI(t *testing.T) {
 					ID: types.StringNull(),
 					MarkdownConfig: &markdownConfigModel{
 						Title:       types.StringNull(),
-						Content:     types.StringNull(),
+						Content:     types.StringValue(""),
 						HideTitle:   types.BoolNull(),
 						Description: types.StringNull(),
 					},
@@ -459,6 +459,7 @@ func Test_panelsToAPI(t *testing.T) {
 					"config": {
 						"content": "some content",
                         "hide_title": true,
+						"settings": {},
 						"title": "My Panel"
 					}
 				}
@@ -514,7 +515,7 @@ func Test_panelsToAPI(t *testing.T) {
 						"legend": {"size":"small"},
 						"metrics": [{"operation":"count"}],
 						"group_by": [{"operation":"terms","field":"host.name","collapse_by":"avg"}],
-						"values": {},
+						"styling": {"values": {}},
 						"time_range": {"from": "now-15m", "to": "now"}
 					}
 				}
@@ -546,7 +547,7 @@ func Test_panelsToAPI(t *testing.T) {
 						"group_breakdown_by": [{"operation":"terms","collapse_by":"avg","fields":["service.name"],
 							"color":{"mode":"categorical","palette":"default","mapping":[],
 							"unassigned":{"type":"color_code","value":"#D3DAE6"}}}],
-						"values": {},
+						"styling": {"values": {}},
 						"time_range": {"from": "now-15m", "to": "now"}
 					}
 				}
@@ -572,7 +573,7 @@ func Test_panelsToAPI(t *testing.T) {
 						"query": {"language":"kql","expression":""},
 						"legend": {"size":"small"},
 						"metrics": [{"operation":"count"}],
-						"values": {"mode": "percentage"},
+						"styling": {"values": {"mode": "percentage"}},
 						"time_range": {"from": "now-15m", "to": "now"}
 					}
 				}
@@ -606,7 +607,7 @@ func Test_panelsToAPI(t *testing.T) {
 					"collapsed": true,
 					"grid": {"y": 50},
 					"panels": [
-						{"grid":{"h":5,"w":5,"x":0,"y":0},"type":"markdown","config":{"title":"Inner Text"}}
+						{"grid":{"h":5,"w":5,"x":0,"y":0},"type":"markdown","config":{"content":"","settings":{},"title":"Inner Text"}}
 					]
 				}
 			]`,
@@ -648,6 +649,16 @@ func Test_panelModel_toAPI_configJSONErrors(t *testing.T) {
 			},
 			errorSummary:  "Unsupported panel type for config_json",
 			errorContains: "Only markdown and vis panel types are currently supported",
+		},
+		{
+			name: "rejects panel-level config_json for lens-dashboard-app (REQ-025 write path)",
+			panel: panelModel{
+				Type:       types.StringValue("lens-dashboard-app"),
+				Grid:       panelGridModel{X: types.Int64Value(0), Y: types.Int64Value(0)},
+				ConfigJSON: customtypes.NewJSONWithDefaultsValue(`{"x":1}`, populatePanelConfigJSONDefaults),
+			},
+			errorSummary:  "Unsupported panel type for config_json",
+			errorContains: "Panel-level `config_json` is not supported for `lens-dashboard-app`",
 		},
 		{
 			name: "rejects missing panel configuration",

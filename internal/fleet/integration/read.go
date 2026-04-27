@@ -19,7 +19,9 @@ package integration
 
 import (
 	"context"
+	"strings"
 
+	"github.com/elastic/terraform-provider-elasticstack/generated/kbapi"
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients/fleet"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -34,7 +36,7 @@ func (r *integrationResource) Read(ctx context.Context, req resource.ReadRequest
 		return
 	}
 
-	client, diags := r.client.GetKibanaClient(ctx, stateModel.KibanaConnection)
+	client, diags := r.Client().GetKibanaClient(ctx, stateModel.KibanaConnection)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -53,13 +55,44 @@ func (r *integrationResource) Read(ctx context.Context, req resource.ReadRequest
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if pkg == nil || (pkg.Status != nil && *pkg.Status != "installed") {
+	if pkg == nil || !fleetPackageInstalled(pkg) {
 		resp.State.RemoveResource(ctx)
 		return
 	}
 
-	stateModel.ID = types.StringValue(getPackageID(name, version))
+	// Fleet's GET /epm/packages/{name}/{version} reports status "installed"
+	// whenever the package is installed at *any* version, regardless of the
+	// version path parameter. Use InstallationInfo.Version when present so
+	// Terraform observes out-of-band upgrades and downgrades as drift.
+	// See https://github.com/elastic/terraform-provider-elasticstack/issues/1585.
+	installedVersion := version
+	if pkg.InstallationInfo != nil && pkg.InstallationInfo.Version != "" {
+		installedVersion = pkg.InstallationInfo.Version
+	}
+	stateModel.Version = types.StringValue(installedVersion)
+	stateModel.ID = types.StringValue(getPackageID(name, installedVersion))
 
 	diags = resp.State.Set(ctx, stateModel)
 	resp.Diagnostics.Append(diags...)
+}
+
+// fleetPackageInstalled determines whether Fleet reports a package as fully installed.
+// Newer Kibana versions may populate InstallationInfo.install_status instead of (or in addition to) status,
+// and status casing can vary.
+func fleetPackageInstalled(pkg *kbapi.PackageInfo) bool {
+	if pkg == nil {
+		return false
+	}
+	if pkg.InstallationInfo != nil {
+		switch pkg.InstallationInfo.InstallStatus {
+		case kbapi.PackageInfoInstallationInfoInstallStatusInstalled:
+			return true
+		case kbapi.PackageInfoInstallationInfoInstallStatusInstallFailed:
+			return false
+		}
+	}
+	if pkg.Status != nil {
+		return strings.EqualFold(*pkg.Status, "installed")
+	}
+	return false
 }

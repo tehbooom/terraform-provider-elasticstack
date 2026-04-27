@@ -26,7 +26,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func Test_alignDashboardStateFromPlanPanels_preservesCommonPanelFields(t *testing.T) {
+func Test_alignPanelStateFromPlan_preservesCommonPanelFields(t *testing.T) {
 	planPanels := []panelModel{
 		{
 			MosaicConfig: &mosaicConfigModel{
@@ -76,7 +76,7 @@ func Test_alignDashboardStateFromPlanPanels_preservesCommonPanelFields(t *testin
 	}
 
 	for i := range min(len(planPanels), len(statePanels)) {
-		alignPanelStateFromPlan(&planPanels[i], &statePanels[i])
+		alignPanelStateFromPlan(t.Context(), &planPanels[i], &statePanels[i])
 	}
 
 	assert.Equal(t, planPanels[0].MosaicConfig.Title, statePanels[0].MosaicConfig.Title)

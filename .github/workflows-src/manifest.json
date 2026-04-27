@@ -5,6 +5,10 @@
       "output": ".github/workflows/openspec-verify-label.md"
     },
     {
+      "template": ".github/workflows-src/duplicate-code-detector/workflow.md.tmpl",
+      "output": ".github/workflows/duplicate-code-detector.md"
+    },
+    {
       "template": ".github/workflows-src/schema-coverage-rotation/workflow.md.tmpl",
       "output": ".github/workflows/schema-coverage-rotation.md"
     },
@@ -21,8 +25,16 @@
       "output": ".github/workflows/kibana-spec-impact.md"
     },
     {
-      "template": ".github/workflows-src/pr-changelog-authoring/workflow.md.tmpl",
-      "output": ".github/workflows/pr-changelog-authoring.md"
+      "template": ".github/workflows-src/pr-changelog-check/workflow.yml.tmpl",
+      "output": ".github/workflows/pr-changelog-check.yml"
+    },
+    {
+      "template": ".github/workflows-src/code-factory-issue/workflow.md.tmpl",
+      "output": ".github/workflows/code-factory-issue.md"
+    },
+    {
+      "template": ".github/workflows-src/change-factory-issue/workflow.md.tmpl",
+      "output": ".github/workflows/change-factory-issue.md"
     }
   ]
 }

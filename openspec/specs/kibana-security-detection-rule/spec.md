@@ -165,7 +165,7 @@ resource "elasticstack_kibana_security_detection_rule" "example" {
   actions {                     # optional list
     action_type_id = <required, string>
     id             = <required, string>  # connector ID
-    params         = <required, map(string)>
+    params         = <required, JSON-normalized string> # jsonencode() of the action params object
     group          = <optional, string>
     uuid           = <optional, computed, string>
     alerts_filter  = <optional, map(string)>
@@ -462,13 +462,19 @@ The `required_fields[*].ecs` attribute is computed by the Kibana backend. The pr
 
 ### Requirement: Mapping — actions from API (REQ-023)
 
-When reading actions from Kibana, each action SHALL be mapped to state with its `action_type_id`, `id`, `params` (as map(string)), `group`, `uuid`, `alerts_filter` (as map(string)), and `frequency` block. If the API returns no actions, the actions list in state SHALL be null. The `params` values SHALL be coerced to strings from the API's `map[string]any` representation.
+When reading actions from Kibana, each action SHALL be mapped to state with its `action_type_id`, `id`, `params` (as JSON-normalized string), `group`, `uuid`, `alerts_filter` (as map(string)), and `frequency` block. If the API returns no actions, the actions list in state SHALL be null. The `params` object returned by the API (`map[string]any`) SHALL be marshaled to a JSON-normalized string using `jsontypes.NewNormalizedValue()`. This preserves nested object structures that cannot be represented as `map(string)`.
 
 #### Scenario: Empty actions from API
 
 - GIVEN a rule returned by the API with no actions
 - WHEN the provider maps the response to state
 - THEN `actions` SHALL be null in state
+
+#### Scenario: Nested params preserved as JSON
+
+- GIVEN an action whose `params` object contains nested keys (e.g. a Slack `message` block with `attachments`)
+- WHEN the provider maps the API response to state
+- THEN `params` SHALL be a JSON-normalized string that round-trips the full nested structure without data loss
 
 ### Requirement: Mapping — response_actions to API (REQ-024)
 
@@ -556,6 +562,22 @@ The `filters` attribute uses a normalized JSON type (`jsontypes.NormalizedType`)
 - WHEN Terraform validates the configuration
 - THEN the provider SHALL return a validation error on `filters`
 
+### Requirement: State upgrade — actions.params map(string) → JSON string (REQ-032)
+
+The resource schema SHALL be versioned at **1**. When Terraform reads prior state written by schema version **0** (where `actions[*].params` was stored as `map(string)`), the resource SHALL perform an in-place state upgrade to schema version 1 by JSON-encoding each entry's `params` map into a JSON-normalized string. The upgrade SHALL NOT require destroying and recreating the resource. The state upgrade logic SHALL be registered via `ResourceWithUpgradeState`.
+
+#### Scenario: Upgrade from v0 state with map params
+
+- GIVEN persisted state at schema version 0 where `actions[0].params` is stored as a `map(string)` (e.g. `{"body": "hello"}`)
+- WHEN Terraform refreshes or plans against the resource
+- THEN the provider SHALL upgrade the state to schema version 1, converting `params` to the JSON string `"{\"body\":\"hello\"}"` without triggering a destroy/create
+
+#### Scenario: v1 state requires no upgrade
+
+- GIVEN persisted state already at schema version 1
+- WHEN Terraform refreshes or plans against the resource
+- THEN no state upgrade SHALL be applied
+
 ## Traceability (implementation index)
 
 | Area | Primary files |
@@ -579,4 +601,5 @@ The `filters` attribute uses a normalized JSON type (`jsontypes.NormalizedType`)
 | Threshold rule | `models_threshold.go` |
 | API → model utilities | `models_from_api_type_utils.go` |
 | Model → API utilities (response actions, actions, common props) | `models_to_api_type_utils.go` |
+| State upgrade (v0 → v1, params map→JSON) | `state_upgrade.go` |
 | Composite id parsing | `internal/clients/api_client.go` (`CompositeID`, `CompositeIDFromStrFw`) |

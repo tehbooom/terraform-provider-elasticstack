@@ -43,7 +43,9 @@ import (
 	"github.com/elastic/terraform-provider-elasticstack/internal/elasticsearch/security/systemuser"
 	"github.com/elastic/terraform-provider-elasticstack/internal/elasticsearch/security/user"
 	"github.com/elastic/terraform-provider-elasticstack/internal/elasticsearch/watcher/watch"
+	"github.com/elastic/terraform-provider-elasticstack/internal/fleet/agentdownloadsource"
 	"github.com/elastic/terraform-provider-elasticstack/internal/fleet/agentpolicy"
+	"github.com/elastic/terraform-provider-elasticstack/internal/fleet/customintegration"
 	elasticdefendintegrationpolicy "github.com/elastic/terraform-provider-elasticstack/internal/fleet/elastic_defend_integration_policy"
 	"github.com/elastic/terraform-provider-elasticstack/internal/fleet/enrollmenttokens"
 	"github.com/elastic/terraform-provider-elasticstack/internal/fleet/integration"
@@ -167,22 +169,24 @@ func (p *Provider) resources(_ context.Context) []func() resource.Resource {
 		alertingrule.NewResource,
 		dataview.NewResource,
 		defaultdataview.NewResource,
-		func() resource.Resource { return &parameter.Resource{} },
-		func() resource.Resource { return &privatelocation.Resource{} },
-		func() resource.Resource { return &index.Resource{} },
+		parameter.NewResource,
+		privatelocation.NewResource,
+		index.NewResource,
 		monitor.NewResource,
-		func() resource.Resource { return &apikey.Resource{} },
-		func() resource.Resource { return &datastreamlifecycle.Resource{} },
+		apikey.NewResource,
+		datastreamlifecycle.NewResource,
 		ilm.NewResource,
-		func() resource.Resource { return &connectors.Resource{} },
+		connectors.NewResource,
 		agentpolicy.NewResource,
 		agentbuilderagent.NewResource,
 		agentbuildertool.NewResource,
 		agentbuilderworkflow.NewResource,
 		integration.NewResource,
 		integrationpolicy.NewResource,
+		customintegration.NewResource,
 		elasticdefendintegrationpolicy.NewResource,
 		output.NewResource,
+		agentdownloadsource.NewResource,
 		serverhost.NewResource,
 		proxy.NewResource,
 		systemuser.NewSystemUserResource,

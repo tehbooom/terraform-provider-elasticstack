@@ -25,7 +25,7 @@ import (
 	"testing"
 
 	"github.com/elastic/terraform-provider-elasticstack/internal/acctest"
-	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
+	"github.com/elastic/terraform-provider-elasticstack/internal/acctest/checks"
 	kibanaoapi "github.com/elastic/terraform-provider-elasticstack/internal/clients/kibanaoapi"
 	"github.com/elastic/terraform-provider-elasticstack/internal/kibana/slo"
 	"github.com/elastic/terraform-provider-elasticstack/internal/versionutils"
@@ -530,6 +530,37 @@ func TestAccResourceSlo_timeslice_metric_indicator_multiple_mixed_metrics(t *tes
 	})
 }
 
+func TestAccResourceSlo_metric_custom_indicator_doc_count(t *testing.T) {
+	sloName := sdkacctest.RandStringFromCharSet(22, sdkacctest.CharSetAlphaNum)
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { acctest.PreCheck(t) },
+		CheckDestroy: checkResourceSloDestroy,
+		Steps: []resource.TestStep{
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(sloTimesliceMetricsMinVersion),
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("test"),
+				ConfigVariables: config.Variables{
+					"name": config.StringVariable(sloName),
+				},
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "metric_custom_indicator.0.index", "my-index-"+sloName),
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "metric_custom_indicator.0.good.0.metrics.0.name", "A"),
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "metric_custom_indicator.0.good.0.metrics.0.aggregation", "doc_count"),
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "metric_custom_indicator.0.good.0.metrics.0.filter", "status: 200"),
+					resource.TestCheckNoResourceAttr("elasticstack_kibana_slo.test_slo", "metric_custom_indicator.0.good.0.metrics.0.field"),
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "metric_custom_indicator.0.good.0.equation", "A"),
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "metric_custom_indicator.0.total.0.metrics.0.name", "B"),
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "metric_custom_indicator.0.total.0.metrics.0.aggregation", "doc_count"),
+					resource.TestCheckNoResourceAttr("elasticstack_kibana_slo.test_slo", "metric_custom_indicator.0.total.0.metrics.0.filter"),
+					resource.TestCheckNoResourceAttr("elasticstack_kibana_slo.test_slo", "metric_custom_indicator.0.total.0.metrics.0.field"),
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "metric_custom_indicator.0.total.0.equation", "B"),
+				),
+			},
+		},
+	})
+}
+
 func TestAccResourceSloErrors(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() { acctest.PreCheck(t) },
@@ -750,32 +781,73 @@ func TestAccResourceSloRangeFromZero(t *testing.T) {
 	})
 }
 
-func checkResourceSloDestroy(s *terraform.State) error {
-	client, err := clients.NewAcceptanceTestingKibanaScopedClient()
-	if err != nil {
-		return err
-	}
-
-	oapi, err := client.GetKibanaOapiClient()
-	if err != nil {
-		return err
-	}
-
-	for _, rs := range s.RootModule().Resources {
-		if rs.Type != "elasticstack_kibana_slo" {
-			continue
-		}
-		// CompositeID stores spaceID as ClusterID and sloID as ResourceID.
-		compID, _ := clients.CompositeIDFromStr(rs.Primary.ID)
-
-		res, diags := kibanaoapi.GetSlo(context.Background(), oapi, compID.ClusterID, compID.ResourceID)
-		if diags.HasError() {
-			return fmt.Errorf("failed to check if SLO was destroyed: %v", diags)
-		}
-
-		if res != nil {
-			return fmt.Errorf("SLO (%s) still exists", compID.ResourceID)
-		}
-	}
-	return nil
+// TestAccResourceSloFloatPrecision verifies that objective fields (target,
+// timeslice_target) round-trip through the provider without precision loss.
+// Prior to the fix in https://github.com/elastic/terraform-provider-elasticstack/issues/2396,
+// the generated client used float32 for these fields. Values like 0.999 are not
+// exactly representable in float32, so reading them back produced different bits
+// (e.g. float64(float32(0.999)) = 0.9990000128746033), causing a "provider
+// produced inconsistent result after apply" error.
+func TestAccResourceSloFloatPrecision(t *testing.T) {
+	sloName := sdkacctest.RandStringFromCharSet(22, sdkacctest.CharSetAlphaNum)
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { acctest.PreCheck(t) },
+		CheckDestroy: checkResourceSloDestroy,
+		Steps: []resource.TestStep{
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(sloTimesliceMetricsMinVersion),
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("test"),
+				ConfigVariables: config.Variables{
+					"name": config.StringVariable(sloName),
+				},
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "objective.0.target", "0.999"),
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "objective.0.timeslice_target", "0.95"),
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "objective.0.timeslice_window", "5m"),
+				),
+			},
+		},
+	})
 }
+
+// TestAccResourceSloHistogramFloatPrecision verifies that histogram_custom_indicator
+// range fields (from, to) round-trip without precision loss.
+// See https://github.com/elastic/terraform-provider-elasticstack/issues/2400:
+// float64(float32(0.001)) = 0.0010000000474974513, causing a "provider produced
+// inconsistent result after apply" error when those fields were float32 in the client.
+func TestAccResourceSloHistogramFloatPrecision(t *testing.T) {
+	sloName := sdkacctest.RandStringFromCharSet(22, sdkacctest.CharSetAlphaNum)
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { acctest.PreCheck(t) },
+		CheckDestroy: checkResourceSloDestroy,
+		Steps: []resource.TestStep{
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(sloTimesliceMetricsMinVersion),
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("test"),
+				ConfigVariables: config.Variables{
+					"name": config.StringVariable(sloName),
+				},
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "histogram_custom_indicator.0.good.0.from", "0.001"),
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "histogram_custom_indicator.0.good.0.to", "1"),
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "objective.0.target", "0.999"),
+				),
+			},
+		},
+	})
+}
+
+// checkResourceSloDestroy verifies all SLO resources have been destroyed.
+// The composite ID stores spaceID as ClusterID and sloID as ResourceID.
+var checkResourceSloDestroy = checks.KibanaResourceDestroyCheckCompositeID(
+	"elasticstack_kibana_slo",
+	func(ctx context.Context, client *kibanaoapi.Client, spaceID, sloID string) (bool, error) {
+		res, diags := kibanaoapi.GetSlo(ctx, client, spaceID, sloID)
+		if diags.HasError() {
+			return false, fmt.Errorf("failed to check if SLO was destroyed: %v", diags)
+		}
+		return res != nil, nil
+	},
+)

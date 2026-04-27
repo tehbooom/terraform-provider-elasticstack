@@ -30,6 +30,48 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
+func metricChartAttrsFromPayload(payload any) (kbapi.KbnDashboardPanelTypeVisConfig0, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	var attrs kbapi.KbnDashboardPanelTypeVisConfig0
+
+	rawBytes, err := json.Marshal(payload)
+	if err != nil {
+		diags.AddError("Failed to marshal metric chart payload", err.Error())
+		return attrs, diags
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(rawBytes, &raw); err != nil {
+		diags.AddError("Failed to decode metric chart payload", err.Error())
+		return attrs, diags
+	}
+
+	if styling, ok := raw["styling"].(map[string]any); ok {
+		if icon, ok := styling["icon"].(map[string]any); ok {
+			if name, _ := icon["name"].(string); name == "" {
+				delete(styling, "icon")
+			}
+		}
+		if len(styling) == 0 {
+			delete(raw, "styling")
+		} else {
+			raw["styling"] = styling
+		}
+	}
+
+	cleanedBytes, err := json.Marshal(raw)
+	if err != nil {
+		diags.AddError("Failed to marshal cleaned metric chart payload", err.Error())
+		return attrs, diags
+	}
+
+	if err := json.Unmarshal(cleanedBytes, &attrs); err != nil {
+		diags.AddError("Failed to create metric chart schema", err.Error())
+	}
+
+	return attrs, diags
+}
+
 // stripMetricBreakdownByAPIFields removes server-added fields from breakdown_by JSON
 // that are not part of the API spec but are returned by the Kibana API on read.
 func stripMetricBreakdownByAPIFields(jsonStr string) string {
@@ -63,7 +105,17 @@ func (c metricChartPanelConfigConverter) populateFromAttributes(ctx context.Cont
 	//
 	// Disambiguate variant 0 vs 1 using dataset type. The regenerated API can
 	// return an empty standard-query object, so query presence is not reliable.
+	//
+	// Always allocate a fresh metricChartConfigModel so that fromAPIVariant0/1
+	// does not mutate the plan's struct (pm is seeded from the plan via pm = *tfPanel,
+	// so pm.MetricChartConfig is aliased to the plan's pointer). Seed the fresh
+	// struct with the prior metrics slice so the inline priorMetrics preservation
+	// inside fromAPIVariant0 can still compare against plan values.
+	priorConfig := pm.MetricChartConfig
 	pm.MetricChartConfig = &metricChartConfigModel{}
+	if priorConfig != nil {
+		pm.MetricChartConfig.Metrics = priorConfig.Metrics
+	}
 	if variant0, err := attrs.AsMetricNoESQL(); err == nil && !isMetricNoESQLCandidateActuallyESQL(variant0) {
 		return pm.MetricChartConfig.fromAPIVariant0(ctx, variant0)
 	}
@@ -186,6 +238,7 @@ func (m *metricChartConfigModel) fromAPIVariant0(ctx context.Context, apiChart k
 	m.Query.fromAPI(apiChart.Query)
 
 	if len(apiChart.Metrics) > 0 {
+		priorMetrics := m.Metrics
 		m.Metrics = make([]metricItemModel, len(apiChart.Metrics))
 		for i, metric := range apiChart.Metrics {
 			metricJSON, err := json.Marshal(metric)
@@ -193,10 +246,14 @@ func (m *metricChartConfigModel) fromAPIVariant0(ctx context.Context, apiChart k
 				diags.AddError("Failed to marshal metric", err.Error())
 				continue
 			}
-			m.Metrics[i].ConfigJSON = customtypes.NewJSONWithDefaultsValue(
+			cfg := customtypes.NewJSONWithDefaultsValue(
 				string(metricJSON),
-				populateLensMetricDefaults,
+				populateMetricChartMetricDefaults,
 			)
+			if i < len(priorMetrics) && metricChartMetricConfigsEquivalent(priorMetrics[i].ConfigJSON, cfg) {
+				cfg = priorMetrics[i].ConfigJSON
+			}
+			m.Metrics[i].ConfigJSON = cfg
 		}
 	}
 
@@ -226,6 +283,7 @@ func (m *metricChartConfigModel) fromAPIVariant1(ctx context.Context, apiChart k
 	m.Query = nil
 
 	if len(apiChart.Metrics) > 0 {
+		priorMetrics := m.Metrics
 		m.Metrics = make([]metricItemModel, len(apiChart.Metrics))
 		for i, metric := range apiChart.Metrics {
 			metricJSON, err := json.Marshal(metric)
@@ -233,10 +291,14 @@ func (m *metricChartConfigModel) fromAPIVariant1(ctx context.Context, apiChart k
 				diags.AddError("Failed to marshal metric", err.Error())
 				continue
 			}
-			m.Metrics[i].ConfigJSON = customtypes.NewJSONWithDefaultsValue(
+			cfg := customtypes.NewJSONWithDefaultsValue(
 				string(metricJSON),
-				populateLensMetricDefaults,
+				populateMetricChartMetricDefaults,
 			)
+			if i < len(priorMetrics) && metricChartMetricConfigsEquivalent(priorMetrics[i].ConfigJSON, cfg) {
+				cfg = priorMetrics[i].ConfigJSON
+			}
+			m.Metrics[i].ConfigJSON = cfg
 		}
 	}
 
@@ -333,10 +395,8 @@ func (m *metricChartConfigModel) toAPIVariant0() (kbapi.KbnDashboardPanelTypeVis
 		}
 	}
 
-	if err := attrs.FromMetricNoESQL(variant0); err != nil {
-		diags.AddError("Failed to create metric chart schema variant 0", err.Error())
-	}
-
+	attrs, attrsDiags := metricChartAttrsFromPayload(variant0)
+	diags.Append(attrsDiags...)
 	return attrs, diags
 }
 
@@ -414,9 +474,7 @@ func (m *metricChartConfigModel) toAPIVariant1() (kbapi.KbnDashboardPanelTypeVis
 		}
 	}
 
-	if err := attrs.FromMetricESQL(variant1); err != nil {
-		diags.AddError("Failed to create metric chart schema variant 1", err.Error())
-	}
-
+	attrs, attrsDiags := metricChartAttrsFromPayload(variant1)
+	diags.Append(attrsDiags...)
 	return attrs, diags
 }

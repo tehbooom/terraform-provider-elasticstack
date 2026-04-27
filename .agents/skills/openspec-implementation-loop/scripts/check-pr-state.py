@@ -8,10 +8,10 @@ from typing import Any
 
 
 REVIEW_THREADS_QUERY = """
-query($owner: String!, $name: String!, $number: Int!) {
+query($owner: String!, $name: String!, $number: Int!, $after: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
-      reviewThreads(first: 100) {
+      reviewThreads(first: 100, after: $after) {
         nodes {
           id
           isResolved
@@ -28,6 +28,10 @@ query($owner: String!, $name: String!, $number: Int!) {
               url
             }
           }
+        }
+        pageInfo {
+          endCursor
+          hasNextPage
         }
       }
     }
@@ -69,6 +73,46 @@ def sort_items(items: list[dict[str, Any]], *keys: str) -> list[dict[str, Any]]:
         items,
         key=lambda item: tuple(str(item.get(key) or "") for key in keys),
     )
+
+
+def fetch_review_threads(repo_args: list[str], owner: str, repo_name: str, pr_number: int) -> list[dict[str, Any]]:
+    threads: list[dict[str, Any]] = []
+    after: str | None = None
+
+    while True:
+        gh_args = [
+            "api",
+            *repo_args,
+            "graphql",
+            "-F",
+            f"owner={owner}",
+            "-F",
+            f"name={repo_name}",
+            "-F",
+            f"number={pr_number}",
+            "-f",
+            f"query={REVIEW_THREADS_QUERY}",
+        ]
+        if after:
+            gh_args.extend(["-F", f"after={after}"])
+
+        payload = run_gh(gh_args)
+        review_threads = (
+            payload.get("data", {})
+            .get("repository", {})
+            .get("pullRequest", {})
+            .get("reviewThreads", {})
+        )
+        threads.extend(review_threads.get("nodes", []))
+
+        page_info = review_threads.get("pageInfo", {})
+        if not page_info.get("hasNextPage"):
+            break
+        after = page_info.get("endCursor")
+        if not after:
+            break
+
+    return threads
 
 
 def main() -> int:
@@ -122,29 +166,7 @@ def main() -> int:
             f"repos/{owner}/{repo_name}/pulls/{pr_number}/comments?per_page=100",
         ]
     )
-    review_threads_payload = run_gh(
-        [
-            "api",
-            *repo_args,
-            "graphql",
-            "-F",
-            f"owner={owner}",
-            "-F",
-            f"name={repo_name}",
-            "-F",
-            f"number={pr_number}",
-            "-f",
-            f"query={REVIEW_THREADS_QUERY}",
-        ]
-    )
-
-    thread_nodes = (
-        review_threads_payload.get("data", {})
-        .get("repository", {})
-        .get("pullRequest", {})
-        .get("reviewThreads", {})
-        .get("nodes", [])
-    )
+    thread_nodes = fetch_review_threads(repo_args, owner, repo_name, pr_number)
 
     normalized_threads = []
     for thread in thread_nodes:

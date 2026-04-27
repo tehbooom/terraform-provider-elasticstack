@@ -65,7 +65,7 @@ resource "elasticstack_kibana_dashboard" "test" {
           }
         ]
       })
-      axes = {
+      axis = {
         x = {
           labels = {
             orientation = "horizontal"
@@ -86,9 +86,11 @@ resource "elasticstack_kibana_dashboard" "test" {
           }
         }
       }
-      cells = {
-        labels = {
-          visible = true
+      styling = {
+        cells = {
+          labels = {
+            visible = true
+          }
         }
       }
       legend = {

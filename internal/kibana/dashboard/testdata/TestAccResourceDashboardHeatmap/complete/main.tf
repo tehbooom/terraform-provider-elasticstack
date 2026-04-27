@@ -77,7 +77,7 @@ resource "elasticstack_kibana_dashboard" "test" {
           }
         ]
       })
-      axes = {
+      axis = {
         x = {
           labels = {
             orientation = "vertical"
@@ -98,9 +98,11 @@ resource "elasticstack_kibana_dashboard" "test" {
           }
         }
       }
-      cells = {
-        labels = {
-          visible = false
+      styling = {
+        cells = {
+          labels = {
+            visible = false
+          }
         }
       }
       legend = {

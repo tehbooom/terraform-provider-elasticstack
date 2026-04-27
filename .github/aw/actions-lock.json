@@ -40,6 +40,11 @@
       "version": "v6.3.0",
       "sha": "4b73464bb391d4059bd26b0524d20df3927bd417"
     },
+    "actions/setup-node@v6": {
+      "repo": "actions/setup-node",
+      "version": "v6",
+      "sha": "48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e"
+    },
     "actions/setup-node@v6.3.0": {
       "repo": "actions/setup-node",
       "version": "v6.3.0",
@@ -54,6 +59,11 @@
       "repo": "actions/upload-artifact",
       "version": "v7",
       "sha": "bbbca2ddaa5d8feaa63e36b76fdaad77386f024f"
+    },
+    "github/gh-aw-actions/setup-cli@v0.68.3": {
+      "repo": "github/gh-aw-actions/setup-cli",
+      "version": "v0.68.3",
+      "sha": "ba90f2186d7ad780ec640f364005fa24e797b360"
     },
     "github/gh-aw-actions/setup@v0.68.3": {
       "repo": "github/gh-aw-actions/setup",

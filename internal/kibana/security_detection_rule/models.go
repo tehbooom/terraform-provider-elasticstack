@@ -175,13 +175,13 @@ type CardinalityModel struct {
 }
 
 type ActionModel struct {
-	ActionTypeID types.String `tfsdk:"action_type_id"`
-	ID           types.String `tfsdk:"id"`
-	Params       types.Map    `tfsdk:"params"`
-	Group        types.String `tfsdk:"group"`
-	UUID         types.String `tfsdk:"uuid"`
-	AlertsFilter types.Map    `tfsdk:"alerts_filter"`
-	Frequency    types.Object `tfsdk:"frequency"`
+	ActionTypeID types.String         `tfsdk:"action_type_id"`
+	ID           types.String         `tfsdk:"id"`
+	Params       jsontypes.Normalized `tfsdk:"params"`
+	Group        types.String         `tfsdk:"group"`
+	UUID         types.String         `tfsdk:"uuid"`
+	AlertsFilter types.Map            `tfsdk:"alerts_filter"`
+	Frequency    types.Object         `tfsdk:"frequency"`
 }
 
 type ActionFrequencyModel struct {

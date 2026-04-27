@@ -55,6 +55,7 @@ type panelModel struct {
 	RangeSliderControlConfig      *rangeSliderControlConfigModel                    `tfsdk:"range_slider_control_config"`
 	SyntheticsStatsOverviewConfig *syntheticsStatsOverviewConfigModel               `tfsdk:"synthetics_stats_overview_config"`
 	SyntheticsMonitorsConfig      *syntheticsMonitorsConfigModel                    `tfsdk:"synthetics_monitors_config"`
+	LensDashboardAppConfig        *lensDashboardAppConfigModel                      `tfsdk:"lens_dashboard_app_config"`
 	ConfigJSON                    customtypes.JSONWithDefaultsValue[map[string]any] `tfsdk:"config_json"`
 }
 
@@ -220,7 +221,8 @@ func panelUsesConfigJSONOnly(pm *panelModel) bool {
 		pm.OptionsListControlConfig == nil &&
 		pm.RangeSliderControlConfig == nil &&
 		pm.SyntheticsStatsOverviewConfig == nil &&
-		pm.SyntheticsMonitorsConfig == nil
+		pm.SyntheticsMonitorsConfig == nil &&
+		pm.LensDashboardAppConfig == nil
 }
 
 func (m *dashboardModel) mapPanelFromAPI(ctx context.Context, tfPanel *panelModel, panelItem kbapi.DashboardPanelItem) (panelModel, diag.Diagnostics) {
@@ -249,29 +251,31 @@ func (m *dashboardModel) mapPanelFromAPI(ctx context.Context, tfPanel *panelMode
 		}
 		setPanelGridFromAPI(&pm, markdownPanel.Grid.X, markdownPanel.Grid.Y, markdownPanel.Grid.W, markdownPanel.Grid.H)
 		pm.ID = types.StringPointerValue(markdownPanel.Id)
-		if markdownPanel.Config != nil {
-			if !panelUsesConfigJSONOnly(tfPanel) {
-				config0, err := markdownPanel.Config.AsKbnDashboardPanelTypeMarkdownConfig0()
-				if err != nil {
-					// Kibana may return inline markdown fields without the union discriminator
-					// expected by AsKbnDashboardPanelTypeMarkdownConfig0; fall back to unmarshalling
-					// the raw config JSON into the inline schema.
-					if b, mErr := markdownPanel.Config.MarshalJSON(); mErr == nil {
-						var inline kbapi.KbnDashboardPanelTypeMarkdownConfig0
-						if json.Unmarshal(b, &inline) == nil {
-							config0 = inline
-							err = nil
-						}
+		if !panelUsesConfigJSONOnly(tfPanel) {
+			config0, err := markdownPanel.Config.AsKbnDashboardPanelTypeMarkdownConfig0()
+			if err != nil {
+				// Kibana may return inline markdown fields without the union discriminator
+				// expected by AsKbnDashboardPanelTypeMarkdownConfig0; fall back to unmarshalling
+				// the raw config JSON into the inline schema.
+				if b, mErr := markdownPanel.Config.MarshalJSON(); mErr == nil {
+					var inline kbapi.KbnDashboardPanelTypeMarkdownConfig0
+					if json.Unmarshal(b, &inline) == nil {
+						config0 = inline
+						err = nil
 					}
 				}
-				if err == nil {
-					populateMarkdownFromAPI(&pm, config0)
-				}
 			}
-			configBytes, err := markdownPanel.Config.MarshalJSON()
 			if err == nil {
-				pm.ConfigJSON = customtypes.NewJSONWithDefaultsValue(string(configBytes), populatePanelConfigJSONDefaults)
+				populateMarkdownFromAPI(&pm, config0)
 			}
+		}
+		configBytes, err := markdownPanel.Config.MarshalJSON()
+		if err == nil {
+			configJSON := customtypes.NewJSONWithDefaultsValue(string(configBytes), populatePanelConfigJSONDefaults)
+			if tfPanel != nil {
+				configJSON = preservePriorJSONWithDefaultsIfEquivalent(ctx, tfPanel.ConfigJSON, configJSON, &diags)
+			}
+			pm.ConfigJSON = configJSON
 		}
 	case panelTypeSloOverview:
 		sloPanel, err := panelItem.AsKbnDashboardPanelTypeSloOverview()
@@ -392,6 +396,16 @@ func (m *dashboardModel) mapPanelFromAPI(ctx context.Context, tfPanel *panelMode
 		pm.ID = types.StringPointerValue(smPanel.Id)
 		pm.ConfigJSON = customtypes.NewJSONWithDefaultsNull(populatePanelConfigJSONDefaults)
 		populateSyntheticsMonitorsFromAPI(&pm, tfPanel, smPanel)
+	case panelTypeLensDashboardApp:
+		ldPanel, err := panelItem.AsKbnDashboardPanelTypeLensDashboardApp()
+		if err != nil {
+			return panelModel{}, diagutil.FrameworkDiagFromError(err)
+		}
+		setPanelGridFromAPI(&pm, ldPanel.Grid.X, ldPanel.Grid.Y, ldPanel.Grid.W, ldPanel.Grid.H)
+		pm.ID = types.StringPointerValue(ldPanel.Id)
+		pm.ConfigJSON = customtypes.NewJSONWithDefaultsNull(populatePanelConfigJSONDefaults)
+		d := populateLensDashboardAppFromAPI(ctx, &pm, tfPanel, ldPanel)
+		diags.Append(d...)
 	default:
 		// No typed mapping yet; keep only the panel type.
 		pm.ID = types.StringNull()
@@ -403,7 +417,7 @@ func (m *dashboardModel) mapPanelFromAPI(ctx context.Context, tfPanel *panelMode
 		}
 	}
 
-	alignPanelStateFromPlan(tfPanel, &pm)
+	alignPanelStateFromPlan(ctx, tfPanel, &pm)
 
 	return pm, diags
 }
@@ -518,7 +532,7 @@ func (pm panelModel) toAPI() (kbapi.DashboardPanelItem, diag.Diagnostics) {
 			return kbapi.DashboardPanelItem{}, diagutil.FrameworkDiagFromError(err)
 		}
 		markdownPanel := kbapi.KbnDashboardPanelTypeMarkdown{
-			Config: &config,
+			Config: config,
 			Grid:   grid,
 			Id:     panelID,
 		}
@@ -530,6 +544,26 @@ func (pm panelModel) toAPI() (kbapi.DashboardPanelItem, diag.Diagnostics) {
 
 	if pm.SloOverviewConfig != nil {
 		return sloOverviewToAPI(pm, grid, panelID)
+	}
+
+	lensGrid := lensDashboardAPIGrid{H: grid.H, W: grid.W, X: grid.X, Y: grid.Y}
+	if pm.LensDashboardAppConfig != nil {
+		return lensDashboardAppToAPI(pm, lensGrid, panelID)
+	}
+	if pm.Type.ValueString() == panelTypeLensDashboardApp {
+		if typeutils.IsKnown(pm.ConfigJSON) && !pm.ConfigJSON.IsNull() {
+			diags.AddError(
+				"Unsupported panel type for config_json",
+				"Panel-level `config_json` is not supported for `lens-dashboard-app` panels. "+
+					"Use the `lens_dashboard_app_config` block with `by_value` or `by_reference` instead.",
+			)
+			return kbapi.DashboardPanelItem{}, diags
+		}
+		diags.AddError(
+			"Missing `lens_dashboard_app_config`",
+			"The `lens_dashboard_app_config` block is required for `lens-dashboard-app` panels.",
+		)
+		return kbapi.DashboardPanelItem{}, diags
 	}
 
 	if pm.Type.ValueString() == panelTypeRangeSlider || pm.RangeSliderControlConfig != nil {
@@ -696,7 +730,7 @@ func (pm panelModel) toAPI() (kbapi.DashboardPanelItem, diag.Diagnostics) {
 				return kbapi.DashboardPanelItem{}, diags
 			}
 			markdownPanel := kbapi.KbnDashboardPanelTypeMarkdown{
-				Config: &config,
+				Config: config,
 				Grid:   grid,
 				Id:     panelID,
 			}
@@ -734,6 +768,7 @@ func (pm panelModel) toAPI() (kbapi.DashboardPanelItem, diag.Diagnostics) {
 			diags.AddError(
 				"Unsupported panel type for config_json",
 				"Only markdown and vis panel types are currently supported with config_json. "+
+					"The `lens-dashboard-app` panel type does not support panel-level `config_json`; use the `lens_dashboard_app_config` block with `by_value` or `by_reference` instead. "+
 					"The esql_control panel type must be managed using the esql_control_config block. "+
 					"The synthetics_monitors panel type must be managed using the synthetics_monitors_config block.",
 			)

@@ -36,7 +36,7 @@ func (r *Resource) Delete(ctx context.Context, request resource.DeleteRequest, r
 		return
 	}
 
-	apiClient, diags := r.client.GetKibanaClient(ctx, plan.KibanaConnection)
+	apiClient, diags := r.Client().GetKibanaClient(ctx, plan.KibanaConnection)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return
@@ -49,7 +49,7 @@ func (r *Resource) Delete(ctx context.Context, request resource.DeleteRequest, r
 
 	resourceID := plan.ID.ValueString()
 
-	compositeID, dg := tryReadCompositeID(resourceID)
+	compositeID, dg := synthetics.TryReadCompositeID(resourceID)
 	response.Diagnostics.Append(dg...)
 	if response.Diagnostics.HasError() {
 		return

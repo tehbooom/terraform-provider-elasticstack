@@ -19,13 +19,11 @@ package privatelocation
 
 import (
 	_ "embed"
-	"strings"
 
 	"github.com/elastic/terraform-provider-elasticstack/generated/kbapi"
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
 	"github.com/elastic/terraform-provider-elasticstack/internal/kibana/synthetics"
 	providerschema "github.com/elastic/terraform-provider-elasticstack/internal/schema"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
@@ -100,7 +98,7 @@ func privateLocationSchema() schema.Schema {
 }
 
 // privateLocationToCreateBody converts a Terraform model into a kbapi create request body.
-// Tags are passed as *[]string and geo coordinates are explicitly converted from float64 to float32.
+// Tags are passed as *[]string and geo coordinates preserve float64 precision.
 func privateLocationToCreateBody(m tfModelV0) kbapi.PostPrivateLocationJSONRequestBody {
 	body := kbapi.PostPrivateLocationJSONRequestBody{
 		Label:         m.Label.ValueString(),
@@ -114,11 +112,11 @@ func privateLocationToCreateBody(m tfModelV0) kbapi.PostPrivateLocationJSONReque
 
 	if m.Geo != nil {
 		body.Geo = &struct {
-			Lat float32 `json:"lat"`
-			Lon float32 `json:"lon"`
+			Lat float64 `json:"lat"`
+			Lon float64 `json:"lon"`
 		}{
-			Lat: float32(m.Geo.Lat.ValueFloat64()),
-			Lon: float32(m.Geo.Lon.ValueFloat64()),
+			Lat: m.Geo.Lat.ValueFloat64(),
+			Lon: m.Geo.Lon.ValueFloat64(),
 		}
 	}
 
@@ -180,11 +178,9 @@ func tagsFromAdditionalProperties(loc kbapi.SyntheticsGetPrivateLocation) []stri
 }
 
 // geoFromAPIResponse converts the nested geo struct from the API response to a tfGeoConfigV0.
-// The API returns float32 values, which we wrap in Float32PrecisionValue so that Terraform
-// treats them as semantically equal to the user-supplied float64 config values.
 func geoFromAPIResponse(geo *struct {
-	Lat float32 `json:"lat"`
-	Lon float32 `json:"lon"`
+	Lat float64 `json:"lat"`
+	Lon float64 `json:"lon"`
 }) *tfGeoConfigV0 {
 	if geo == nil {
 		return nil
@@ -193,14 +189,6 @@ func geoFromAPIResponse(geo *struct {
 		Lat: NewFloat32PrecisionValue(float64(geo.Lat)),
 		Lon: NewFloat32PrecisionValue(float64(geo.Lon)),
 	}
-}
-
-func tryReadCompositeID(id string) (*clients.CompositeID, diag.Diagnostics) {
-	if strings.Contains(id, "/") {
-		compositeID, diagnostics := synthetics.GetCompositeID(id)
-		return compositeID, diagnostics
-	}
-	return nil, diag.Diagnostics{}
 }
 
 // effectiveSpaceID returns the Kibana space for API calls. When the resource id

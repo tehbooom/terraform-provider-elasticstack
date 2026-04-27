@@ -18,6 +18,8 @@
 package dashboard
 
 import (
+	"context"
+
 	"github.com/elastic/terraform-provider-elasticstack/generated/kbapi"
 	"github.com/elastic/terraform-provider-elasticstack/internal/utils/customtypes"
 	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
@@ -45,10 +47,10 @@ func populateFiltersFromAPI(filters []kbapi.LensPanelFilters_Item, diags *diag.D
 // buildFiltersForAPI converts the model filter slice into the kbapi type, appending errors to diags.
 // The returned slice is always non-nil (empty API payload is []kbapi.LensPanelFilters_Item{}).
 func buildFiltersForAPI(filters []chartFilterJSONModel, diags *diag.Diagnostics) []kbapi.LensPanelFilters_Item {
-	result := []kbapi.LensPanelFilters_Item{}
 	if len(filters) == 0 {
-		return result
+		return []kbapi.LensPanelFilters_Item{}
 	}
+
 	items := make([]kbapi.LensPanelFilters_Item, 0, len(filters))
 	for _, f := range filters {
 		var item kbapi.LensPanelFilters_Item
@@ -58,10 +60,7 @@ func buildFiltersForAPI(filters []chartFilterJSONModel, diags *diag.Diagnostics)
 			items = append(items, item)
 		}
 	}
-	if len(items) > 0 {
-		return items
-	}
-	return result
+	return items
 }
 
 // marshalToNormalized stores the already-marshaled bytes as a jsontypes.Normalized value,
@@ -82,4 +81,38 @@ func marshalToJSONWithDefaults[T any](bytes []byte, err error, fieldName string,
 		return customtypes.JSONWithDefaultsValue[T]{}, false
 	}
 	return customtypes.NewJSONWithDefaultsValue(string(bytes), defaults), true
+}
+
+func preservePriorJSONWithDefaultsIfEquivalent[T any](ctx context.Context, prior, current customtypes.JSONWithDefaultsValue[T], diags *diag.Diagnostics) customtypes.JSONWithDefaultsValue[T] {
+	if prior.IsNull() || prior.IsUnknown() || current.IsNull() || current.IsUnknown() {
+		return current
+	}
+
+	eq, d := prior.StringSemanticEquals(ctx, current)
+	diags.Append(d...)
+	if d.HasError() {
+		return current
+	}
+	if eq {
+		return prior
+	}
+	return current
+}
+
+func preservePriorNormalizedWithDefaultsIfEquivalent[T any](ctx context.Context, prior, current jsontypes.Normalized, defaults func(T) T, diags *diag.Diagnostics) jsontypes.Normalized {
+	if prior.IsNull() || prior.IsUnknown() || current.IsNull() || current.IsUnknown() {
+		return current
+	}
+
+	priorWithDefaults := customtypes.NewJSONWithDefaultsValue(prior.ValueString(), defaults)
+	currentWithDefaults := customtypes.NewJSONWithDefaultsValue(current.ValueString(), defaults)
+	eq, d := priorWithDefaults.StringSemanticEquals(ctx, currentWithDefaults)
+	diags.Append(d...)
+	if d.HasError() {
+		return current
+	}
+	if eq {
+		return prior
+	}
+	return current
 }

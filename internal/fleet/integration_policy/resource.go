@@ -26,6 +26,7 @@ import (
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients/fleet"
 	"github.com/elastic/terraform-provider-elasticstack/internal/diagutil"
+	"github.com/elastic/terraform-provider-elasticstack/internal/resourcecore"
 	"github.com/hashicorp/go-version"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -33,10 +34,10 @@ import (
 )
 
 var (
-	_ resource.Resource                 = &integrationPolicyResource{}
-	_ resource.ResourceWithConfigure    = &integrationPolicyResource{}
-	_ resource.ResourceWithImportState  = &integrationPolicyResource{}
-	_ resource.ResourceWithUpgradeState = &integrationPolicyResource{}
+	_ resource.Resource                 = newIntegrationPolicyResource()
+	_ resource.ResourceWithConfigure    = newIntegrationPolicyResource()
+	_ resource.ResourceWithImportState  = newIntegrationPolicyResource()
+	_ resource.ResourceWithUpgradeState = newIntegrationPolicyResource()
 )
 
 var (
@@ -44,26 +45,19 @@ var (
 	MinVersionOutputID  = version.Must(version.NewVersion("8.16.0"))
 )
 
+type integrationPolicyResource struct {
+	*resourcecore.Core
+}
+
+func newIntegrationPolicyResource() *integrationPolicyResource {
+	return &integrationPolicyResource{
+		Core: resourcecore.New(resourcecore.ComponentFleet, "integration_policy"),
+	}
+}
+
 // NewResource is a helper function to simplify the provider implementation.
 func NewResource() resource.Resource {
-	return &integrationPolicyResource{}
-}
-
-type integrationPolicyResource struct {
-	client *clients.ProviderClientFactory
-}
-
-func (r *integrationPolicyResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	factory, diags := clients.ConvertProviderDataToFactory(req.ProviderData)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	r.client = factory
-}
-
-func (r *integrationPolicyResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
-	resp.TypeName = fmt.Sprintf("%s_%s", req.ProviderTypeName, "fleet_integration_policy")
+	return newIntegrationPolicyResource()
 }
 
 func (r *integrationPolicyResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
