@@ -15,10 +15,10 @@
 
 ## 4. Migration — existing resources
 
-- [ ] 4.1 Migrate `fleet_agent_policy`: embed `*SpaceImporter` wired to `path.Root("policy_id")`, remove the bespoke `ImportState` method from `internal/fleet/agentpolicy/resource.go`
-- [ ] 4.2 Migrate `fleet_integration_policy`: embed `*SpaceImporter` wired to `path.Root("policy_id")`, remove the bespoke `ImportState` method from `internal/fleet/integration_policy/resource.go` (removes strict empty-segment validation, aligning with standard behavior)
-- [ ] 4.3 Migrate `fleet_elastic_defend_integration_policy`: embed `*SpaceImporter` wired to `path.Root("policy_id")`, remove the bespoke `ImportState` method from `internal/fleet/elastic_defend_integration_policy/resource.go` (also removes the extra `ImportStatePassthroughID` call for `id`)
-- [ ] 4.4 Migrate `fleet_agent_binary_download_source`: embed `*SpaceImporter` wired to `path.Root("source_id")`, remove the bespoke `ImportState` method and `setImportStateAttributes` helper from `internal/fleet/agentdownloadsource/resource.go` (removes hardcoded `"default"` fallback and `strings.SplitN` usage)
+- [x] 4.1 Migrate `fleet_agent_policy`: embed `*SpaceImporter` wired to `path.Root("policy_id")`, remove the bespoke `ImportState` method from `internal/fleet/agentpolicy/resource.go`
+- [x] 4.2 Migrate `fleet_integration_policy`: embed `*SpaceImporter` wired to `path.Root("policy_id")`, remove the bespoke `ImportState` method from `internal/fleet/integration_policy/resource.go` (removes strict empty-segment validation, aligning with standard behavior)
+- [x] 4.3 Migrate `fleet_elastic_defend_integration_policy`: embed `*SpaceImporter` wired to `path.Root("policy_id")`, remove the bespoke `ImportState` method from `internal/fleet/elastic_defend_integration_policy/resource.go` (also removes the extra `ImportStatePassthroughID` call for `id`)
+- [x] 4.4 Migrate `fleet_agent_binary_download_source`: embed `*SpaceImporter` wired to `path.Root("source_id")`, remove the bespoke `ImportState` method and `setImportStateAttributes` helper from `internal/fleet/agentdownloadsource/resource.go` (removes hardcoded `"default"` fallback and `strings.SplitN` usage)
 
 ## 5. Spec Updates
 
@@ -26,6 +26,6 @@
 
 ## 6. Verification
 
-- [ ] 6.1 `make build` passes
-- [ ] 6.2 `make lint` passes (check for unused imports left behind after `ImportState` method removals)
+- [x] 6.1 `make build` passes
+- [x] 6.2 `make lint` passes (check for unused imports left behind after `ImportState` method removals)
 - [ ] 6.3 Existing import acceptance tests for `fleet_agent_policy`, `fleet_integration_policy`, `fleet_elastic_defend_integration_policy`, and `fleet_agent_binary_download_source` continue to pass
