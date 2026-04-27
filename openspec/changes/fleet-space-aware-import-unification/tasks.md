@@ -22,10 +22,10 @@
 
 ## 5. Spec Updates
 
-- [ ] 5.1 Verify `make check-openspec` passes with the four delta specs in this change
+- [x] 5.1 Verify `make check-openspec` passes with the four delta specs in this change
 
 ## 6. Verification
 
 - [x] 6.1 `make build` passes
 - [x] 6.2 `make lint` passes (check for unused imports left behind after `ImportState` method removals)
-- [ ] 6.3 Existing import acceptance tests for `fleet_agent_policy`, `fleet_integration_policy`, `fleet_elastic_defend_integration_policy`, and `fleet_agent_binary_download_source` continue to pass
+- [x] 6.3 Existing import acceptance tests for `fleet_agent_policy`, `fleet_integration_policy`, `fleet_elastic_defend_integration_policy`, and `fleet_agent_binary_download_source` continue to pass
