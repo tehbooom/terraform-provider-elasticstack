@@ -56,7 +56,6 @@ resource "elasticstack_kibana_security_detection_rule" "test" {
 - Fix `elasticstack_kibana_slo.metric_custom_indicator` to support doc_count aggregation by making field optional and sending the no-field API variant ([#2394](https://github.com/elastic/terraform-provider-elasticstack/pull/2394))
 - Fix "provider produced inconsistent result after apply" for SLO resources when objective target, timeslice target, or histogram range from/to values are not exactly representable in float32 ([#2401](https://github.com/elastic/terraform-provider-elasticstack/pull/2401))
 - Add `elasticstack_fleet_agent_download_source` resource ([#2081](https://github.com/elastic/terraform-provider-elasticstack/pull/2081))
->>>>>>> main
 
 ## [0.14.4] - 2026-04-20
 
