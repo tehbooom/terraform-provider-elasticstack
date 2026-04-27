@@ -20,7 +20,6 @@ package fleet
 import (
 	"archive/tar"
 	"archive/zip"
-	"bytes"
 	"compress/gzip"
 	"context"
 	"encoding/json"
@@ -671,98 +670,56 @@ func GetPackages(ctx context.Context, client *Client, prerelease bool, spaceID s
 	}
 }
 
-// ProxyItem is a decodable representation of a Fleet proxy returned by the API.
-// It uses map[string]json.RawMessage for proxy_headers to avoid the generated
-// union wrapper types whose unexported fields cannot be populated by json.Unmarshal.
-type ProxyItem struct {
-	ID                     string                     `json:"id"`
-	Name                   string                     `json:"name"`
-	URL                    string                     `json:"url"`
-	Certificate            *string                    `json:"certificate,omitempty"`
-	CertificateAuthorities *string                    `json:"certificate_authorities,omitempty"`
-	CertificateKey         *string                    `json:"certificate_key,omitempty"`
-	IsPreconfigured        *bool                      `json:"is_preconfigured,omitempty"`
-	ProxyHeaders           map[string]json.RawMessage `json:"proxy_headers,omitempty"`
-}
-
-func decodeProxyItem(body []byte) (*ProxyItem, error) {
-	var wrapper struct {
-		Item ProxyItem `json:"item"`
-	}
-	if err := json.Unmarshal(body, &wrapper); err != nil {
-		return nil, err
-	}
-	return &wrapper.Item, nil
-}
-
-func readRawProxyBody(resp *http.Response, err error) ([]byte, int, diag.Diagnostics) {
-	if err != nil {
-		return nil, 0, diagutil.FrameworkDiagFromError(err)
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, resp.StatusCode, diagutil.FrameworkDiagFromError(err)
-	}
-	return body, resp.StatusCode, nil
-}
-
-func decodeProxyItemFromResponse(body []byte, statusCode int) (*ProxyItem, diag.Diagnostics) {
-	switch statusCode {
-	case http.StatusOK:
-		item, err := decodeProxyItem(body)
-		if err != nil {
-			return nil, diagutil.FrameworkDiagFromError(err)
-		}
-		return item, nil
-	default:
-		return nil, reportUnknownError(statusCode, body)
-	}
-}
-
 // GetProxy reads a specific Fleet proxy from the API. Returns (nil, nil) on HTTP 404.
-func GetProxy(ctx context.Context, client *Client, spaceID, proxyID string) (*ProxyItem, diag.Diagnostics) {
-	body, statusCode, diags := readRawProxyBody(client.API.GetFleetProxiesItemid(ctx, proxyID, spaceAwarePathRequestEditor(spaceID)))
-	if diags.HasError() {
-		return nil, diags
+func GetProxy(ctx context.Context, client *Client, spaceID, proxyID string) (*kbapi.FleetProxyItem, diag.Diagnostics) {
+	resp, err := client.API.GetFleetProxiesItemidWithResponse(ctx, proxyID, kibanautil.SpaceAwarePathRequestEditor(spaceID))
+	if err != nil {
+		return nil, diagutil.FrameworkDiagFromError(err)
 	}
-	if statusCode == http.StatusNotFound {
+
+	switch resp.StatusCode() {
+	case http.StatusOK:
+		return &resp.JSON200.Item, nil
+	case http.StatusNotFound:
 		return nil, nil
+	default:
+		return nil, reportUnknownError(resp.StatusCode(), resp.Body)
 	}
-	return decodeProxyItemFromResponse(body, statusCode)
 }
 
-// CreateProxy creates a new Fleet proxy. Both request and response bypass the
-// generated union wrapper types for proxy_headers whose unexported fields cannot
-// be populated by json.Unmarshal.
-func CreateProxy(ctx context.Context, client *Client, spaceID string, body any) (*ProxyItem, diag.Diagnostics) {
-	b, err := json.Marshal(body)
+// CreateProxy creates a new Fleet proxy.
+func CreateProxy(ctx context.Context, client *Client, spaceID string, body kbapi.PostFleetProxiesJSONRequestBody) (*kbapi.FleetProxyItem, diag.Diagnostics) {
+	resp, err := client.API.PostFleetProxiesWithResponse(ctx, body, kibanautil.SpaceAwarePathRequestEditor(spaceID))
 	if err != nil {
 		return nil, diagutil.FrameworkDiagFromError(err)
 	}
-	respBody, statusCode, diags := readRawProxyBody(client.API.PostFleetProxiesWithBody(ctx, "application/json", bytes.NewReader(b), spaceAwarePathRequestEditor(spaceID)))
-	if diags.HasError() {
-		return nil, diags
+
+	switch resp.StatusCode() {
+	case http.StatusOK:
+		return &resp.JSON200.Item, nil
+	default:
+		return nil, reportUnknownError(resp.StatusCode(), resp.Body)
 	}
-	return decodeProxyItemFromResponse(respBody, statusCode)
 }
 
-// UpdateProxy updates an existing Fleet proxy. See CreateProxy for why raw JSON is used.
-func UpdateProxy(ctx context.Context, client *Client, spaceID, proxyID string, body any) (*ProxyItem, diag.Diagnostics) {
-	b, err := json.Marshal(body)
+// UpdateProxy updates an existing Fleet proxy.
+func UpdateProxy(ctx context.Context, client *Client, spaceID, proxyID string, body kbapi.PutFleetProxiesItemidJSONRequestBody) (*kbapi.FleetProxyItem, diag.Diagnostics) {
+	resp, err := client.API.PutFleetProxiesItemidWithResponse(ctx, proxyID, body, kibanautil.SpaceAwarePathRequestEditor(spaceID))
 	if err != nil {
 		return nil, diagutil.FrameworkDiagFromError(err)
 	}
-	respBody, statusCode, diags := readRawProxyBody(client.API.PutFleetProxiesItemidWithBody(ctx, proxyID, "application/json", bytes.NewReader(b), spaceAwarePathRequestEditor(spaceID)))
-	if diags.HasError() {
-		return nil, diags
+
+	switch resp.StatusCode() {
+	case http.StatusOK:
+		return &resp.JSON200.Item, nil
+	default:
+		return nil, reportUnknownError(resp.StatusCode(), resp.Body)
 	}
-	return decodeProxyItemFromResponse(respBody, statusCode)
 }
 
 // DeleteProxy deletes an existing Fleet proxy.
 func DeleteProxy(ctx context.Context, client *Client, spaceID, proxyID string) diag.Diagnostics {
-	resp, err := client.API.DeleteFleetProxiesItemidWithResponse(ctx, proxyID, spaceAwarePathRequestEditor(spaceID))
+	resp, err := client.API.DeleteFleetProxiesItemidWithResponse(ctx, proxyID, kibanautil.SpaceAwarePathRequestEditor(spaceID))
 	if err != nil {
 		return diagutil.FrameworkDiagFromError(err)
 	}

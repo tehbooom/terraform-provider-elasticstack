@@ -73,7 +73,7 @@ Changing `proxy_id` or `space_id` SHALL trigger resource replacement (`RequiresR
 
 ### Requirement: Create
 
-The resource SHALL call `POST /api/fleet/proxies` (space-aware) with `name`, `url`, and any optional TLS and header fields. The response body SHALL be decoded into `ProxyItem` using raw JSON to avoid generated union-type decode failures. State SHALL be set from the decoded response.
+The resource SHALL call `POST /api/fleet/proxies` (space-aware) with `name`, `url`, and any optional TLS and header fields. The response body SHALL be decoded into the generated `kbapi.FleetProxyItem` type. State SHALL be set from the decoded response.
 
 #### Scenario: Successful create
 - **WHEN** a proxy resource is applied for the first time
@@ -82,7 +82,7 @@ The resource SHALL call `POST /api/fleet/proxies` (space-aware) with `name`, `ur
 
 ### Requirement: Read
 
-The resource SHALL call `GET /api/fleet/proxies/{id}` (space-aware). On HTTP 404 the resource SHALL be removed from state. The response body SHALL be decoded into `ProxyItem` using raw JSON.
+The resource SHALL call `GET /api/fleet/proxies/{id}` (space-aware). On HTTP 404 the resource SHALL be removed from state. The response body SHALL be decoded into the generated `kbapi.FleetProxyItem` type.
 
 #### Scenario: Resource deleted out of band
 - **WHEN** the API returns HTTP 404 on Read
@@ -127,9 +127,7 @@ The resource SHALL support import via the composite ID `"<space_id>/<proxy_id>"`
 
 ### Requirement: Proxy headers encoding
 
-`proxy_headers` SHALL be modelled as `map(string)` in the schema. On write, each string value SHALL be JSON-encoded as a quoted string. On read, each raw JSON value SHALL be decoded as a string; non-string values SHALL emit a warning diagnostic and be omitted from state.
-
-The resource SHALL bypass the generated kbapi union wrapper types for `proxy_headers` by using raw `ClientInterface` HTTP methods and decoding responses into `fleet.ProxyItem` (a provider-defined struct with `map[string]json.RawMessage` for `proxy_headers`).
+`proxy_headers` SHALL be modelled as `map(string)` in the schema. On write, each string value SHALL be sent through the generated `kbapi.FleetProxyHeaderValue` union via its `FromFleetProxyHeaderValueString` helper. On read, each header value SHALL be decoded from `kbapi.FleetProxyHeaderValue`; string values SHALL be stored verbatim, while boolean and numeric values (which the Fleet API also accepts) SHALL be stringified into state so that the `map(string)` schema can represent them.
 
 #### Scenario: String header round-trip
 - **WHEN** `proxy_headers = { "X-My-Header" = "value" }` is set
@@ -137,9 +135,9 @@ The resource SHALL bypass the generated kbapi union wrapper types for `proxy_hea
 - **AND** state SHALL contain `proxy_headers.X-My-Header = "value"` after apply
 
 #### Scenario: Non-string header from API
-- **WHEN** the API returns a non-string value for a proxy header key
-- **THEN** a warning diagnostic SHALL be emitted naming the key and value
-- **AND** that key SHALL be omitted from `proxy_headers` in state
+- **WHEN** the API returns a boolean or numeric value for a proxy header key
+- **THEN** that value SHALL be stringified (e.g. `true` → `"true"`, `42` → `"42"`)
+- **AND** the resulting string SHALL be stored under that key in `proxy_headers`
 
 ### Requirement: TLS fields sensitivity
 

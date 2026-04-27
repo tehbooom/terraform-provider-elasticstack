@@ -18,11 +18,11 @@
 package proxy
 
 import (
-	"encoding/json"
 	"fmt"
+	"strconv"
 
+	"github.com/elastic/terraform-provider-elasticstack/generated/kbapi"
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
-	fleet "github.com/elastic/terraform-provider-elasticstack/internal/clients/fleet"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -42,14 +42,14 @@ type proxyModel struct {
 	IsPreconfigured        types.Bool   `tfsdk:"is_preconfigured"`
 }
 
-func (model *proxyModel) populateFromAPI(spaceID string, item fleet.ProxyItem) diag.Diagnostics {
+func (model *proxyModel) populateFromAPI(spaceID string, item kbapi.FleetProxyItem) diag.Diagnostics {
 	var diags diag.Diagnostics
 
-	model.ID = types.StringValue((&clients.CompositeID{ClusterID: spaceID, ResourceID: item.ID}).String())
-	model.ProxyID = types.StringValue(item.ID)
+	model.ID = types.StringValue((&clients.CompositeID{ClusterID: spaceID, ResourceID: item.Id}).String())
+	model.ProxyID = types.StringValue(item.Id)
 	model.SpaceID = types.StringValue(spaceID)
 	model.Name = types.StringValue(item.Name)
-	model.URL = types.StringValue(item.URL)
+	model.URL = types.StringValue(item.Url)
 
 	if item.Certificate != nil && *item.Certificate != "" {
 		model.Certificate = types.StringValue(*item.Certificate)
@@ -75,95 +75,84 @@ func (model *proxyModel) populateFromAPI(spaceID string, item fleet.ProxyItem) d
 		model.IsPreconfigured = types.BoolValue(false)
 	}
 
-	if len(item.ProxyHeaders) > 0 {
-		elems := make(map[string]attr.Value, len(item.ProxyHeaders))
-		for k, raw := range item.ProxyHeaders {
-			var s string
-			if err := json.Unmarshal(raw, &s); err != nil {
-				diags.AddWarning(
-					"Non-string proxy header value",
-					fmt.Sprintf("Proxy header %q has a non-string value %s and cannot be represented in state. "+
-						"Only string header values are supported.", k, string(raw)),
-				)
-				continue
-			}
-			elems[k] = types.StringValue(s)
-		}
-		if !diags.HasError() {
-			headersMap, mapDiags := types.MapValue(types.StringType, elems)
-			diags.Append(mapDiags...)
-			if !diags.HasError() {
-				model.ProxyHeaders = headersMap
-			}
-		}
-	} else {
-		model.ProxyHeaders = types.MapNull(types.StringType)
+	headersMap, headerDiags := proxyHeadersToModel(item.ProxyHeaders)
+	diags.Append(headerDiags...)
+	if !diags.HasError() {
+		model.ProxyHeaders = headersMap
 	}
 
 	return diags
 }
 
-// proxyHeadersFromModel converts the map[string]string Terraform model into
-// map[string]json.RawMessage, encoding each string value as a JSON string.
-// This is used as the wire representation for proxy_headers since the generated
-// union wrapper types have an unexported field that cannot be populated via
-// json.Unmarshal.
-func proxyHeadersFromModel(m types.Map) (map[string]json.RawMessage, diag.Diagnostics) {
+func proxyHeadersToModel(api *map[string]kbapi.FleetProxyHeaderValue) (types.Map, diag.Diagnostics) {
+	var diags diag.Diagnostics
+
+	if api == nil || len(*api) == 0 {
+		return types.MapNull(types.StringType), diags
+	}
+
+	elems := make(map[string]attr.Value, len(*api))
+	for k, v := range *api {
+		s, ok := proxyHeaderValueToString(v)
+		if !ok {
+			diags.AddError(
+				"Unsupported proxy header value",
+				fmt.Sprintf("Proxy header %q has a value type the provider cannot represent in state.", k),
+			)
+			return types.MapNull(types.StringType), diags
+		}
+		elems[k] = types.StringValue(s)
+	}
+
+	headersMap, mapDiags := types.MapValue(types.StringType, elems)
+	diags.Append(mapDiags...)
+	return headersMap, diags
+}
+
+func proxyHeaderValueToString(v kbapi.FleetProxyHeaderValue) (string, bool) {
+	if s, err := v.AsFleetProxyHeaderValueString(); err == nil {
+		return s, true
+	}
+	if b, err := v.AsFleetProxyHeaderValueBoolean(); err == nil {
+		return strconv.FormatBool(b), true
+	}
+	if n, err := v.AsFleetProxyHeaderValueNumber(); err == nil {
+		return strconv.FormatFloat(float64(n), 'f', -1, 32), true
+	}
+	return "", false
+}
+
+func proxyHeadersFromModel(m types.Map) (*map[string]kbapi.FleetProxyHeaderValue, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
 	if m.IsNull() || m.IsUnknown() || len(m.Elements()) == 0 {
 		return nil, diags
 	}
 
-	result := make(map[string]json.RawMessage, len(m.Elements()))
+	out := make(map[string]kbapi.FleetProxyHeaderValue, len(m.Elements()))
 	for k, v := range m.Elements() {
 		s := v.(types.String).ValueString()
-		b, err := json.Marshal(s)
-		if err != nil {
+		var hv kbapi.FleetProxyHeaderValue
+		if err := hv.FromFleetProxyHeaderValueString(s); err != nil {
 			diags.AddError("Failed to encode proxy header", fmt.Sprintf("Could not encode proxy header %q: %s", k, err))
 			return nil, diags
 		}
-		result[k] = b
+		out[k] = hv
 	}
 
-	return result, diags
+	return &out, diags
 }
 
-// proxyCreateBody is a parallel struct for PostFleetProxies that uses
-// map[string]json.RawMessage for proxy_headers, bypassing the generated union
-// wrapper types whose unexported fields cannot be set via JSON round-tripping.
-type proxyCreateBody struct {
-	Certificate            *string                    `json:"certificate,omitempty"`
-	CertificateAuthorities *string                    `json:"certificate_authorities,omitempty"`
-	CertificateKey         *string                    `json:"certificate_key,omitempty"`
-	ID                     *string                    `json:"id,omitempty"`
-	IsPreconfigured        *bool                      `json:"is_preconfigured,omitempty"`
-	Name                   string                     `json:"name"`
-	ProxyHeaders           map[string]json.RawMessage `json:"proxy_headers,omitempty"`
-	URL                    string                     `json:"url"`
-}
-
-// proxyUpdateBody is a parallel struct for PutFleetProxiesItemid.
-// ProxyHeaders has no omitempty so that an empty map is sent as {} to clear headers.
-type proxyUpdateBody struct {
-	Certificate            *string                    `json:"certificate,omitempty"`
-	CertificateAuthorities *string                    `json:"certificate_authorities,omitempty"`
-	CertificateKey         *string                    `json:"certificate_key,omitempty"`
-	Name                   *string                    `json:"name,omitempty"`
-	ProxyHeaders           map[string]json.RawMessage `json:"proxy_headers"`
-	URL                    *string                    `json:"url,omitempty"`
-}
-
-func (model proxyModel) toAPICreateModel() (proxyCreateBody, diag.Diagnostics) {
+func (model proxyModel) toAPICreateModel() (kbapi.PostFleetProxiesJSONRequestBody, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
-	body := proxyCreateBody{
+	body := kbapi.PostFleetProxiesJSONRequestBody{
 		Name: model.Name.ValueString(),
-		URL:  model.URL.ValueString(),
+		Url:  model.URL.ValueString(),
 	}
 
 	if !model.ProxyID.IsNull() && !model.ProxyID.IsUnknown() {
-		body.ID = model.ProxyID.ValueStringPointer()
+		body.Id = model.ProxyID.ValueStringPointer()
 	}
 
 	if !model.Certificate.IsNull() && !model.Certificate.IsUnknown() {
@@ -190,13 +179,14 @@ func (model proxyModel) toAPICreateModel() (proxyCreateBody, diag.Diagnostics) {
 	return body, diags
 }
 
-func (model proxyModel) toAPIUpdateModel() (proxyUpdateBody, diag.Diagnostics) {
+func (model proxyModel) toAPIUpdateModel() (kbapi.PutFleetProxiesItemidJSONRequestBody, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
-	body := proxyUpdateBody{
+	emptyHeaders := map[string]kbapi.FleetProxyHeaderValue{}
+	body := kbapi.PutFleetProxiesItemidJSONRequestBody{
 		Name:         model.Name.ValueStringPointer(),
-		URL:          model.URL.ValueStringPointer(),
-		ProxyHeaders: map[string]json.RawMessage{},
+		Url:          model.URL.ValueStringPointer(),
+		ProxyHeaders: &emptyHeaders,
 	}
 
 	if !model.Certificate.IsNull() && !model.Certificate.IsUnknown() {
