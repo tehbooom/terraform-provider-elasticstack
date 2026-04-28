@@ -15,30 +15,21 @@
 // specific language governing permissions and limitations
 // under the License.
 
-package customintegration
+package enrich
 
 import (
 	"reflect"
 	"testing"
 
-	"github.com/elastic/terraform-provider-elasticstack/internal/resourcecore"
-	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/elastic/terraform-provider-elasticstack/internal/entitycore"
 	"github.com/stretchr/testify/require"
 )
 
-func TestCustomIntegrationResource_embedsResourceCore(t *testing.T) {
+func TestDataSource_embedsEntityCoreDataSourceBase(t *testing.T) {
 	t.Parallel()
-	r := newCustomIntegrationResource()
-	rt := reflect.TypeOf(r).Elem()
-	field, ok := rt.FieldByName("Core")
+	rt := reflect.TypeFor[enrichPolicyDataSource]()
+	field, ok := rt.FieldByName("DataSourceBase")
 	require.True(t, ok)
 	require.True(t, field.Anonymous)
-	require.Equal(t, reflect.TypeFor[*resourcecore.Core](), field.Type)
-}
-
-func TestCustomIntegrationResource_noImportSupport(t *testing.T) {
-	t.Parallel()
-	r := NewResource()
-	_, ok := any(r).(resource.ResourceWithImportState)
-	require.False(t, ok, "custom integration has no ImportState")
+	require.Equal(t, reflect.TypeFor[*entitycore.DataSourceBase](), field.Type)
 }
