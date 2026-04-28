@@ -22,7 +22,8 @@ import (
 
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
 	"github.com/elastic/terraform-provider-elasticstack/internal/diagutil"
-	"github.com/elastic/terraform-provider-elasticstack/internal/resourcecore"
+	"github.com/elastic/terraform-provider-elasticstack/internal/entitycore"
+	"github.com/elastic/terraform-provider-elasticstack/internal/fleet"
 	"github.com/hashicorp/go-version"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -48,37 +49,20 @@ var (
 )
 
 type agentPolicyResource struct {
-	*resourcecore.Core
+	*entitycore.ResourceBase
+	*fleet.SpaceImporter
 }
 
 func newAgentPolicyResource() *agentPolicyResource {
 	return &agentPolicyResource{
-		Core: resourcecore.New(resourcecore.ComponentFleet, "agent_policy"),
+		ResourceBase:  entitycore.NewResourceBase(entitycore.ComponentFleet, "agent_policy"),
+		SpaceImporter: fleet.NewSpaceImporter(path.Root("policy_id")),
 	}
 }
 
 // NewResource is a helper function to simplify the provider implementation.
 func NewResource() resource.Resource {
 	return newAgentPolicyResource()
-}
-
-func (r *agentPolicyResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	var spaceID string
-	var policyID string
-
-	compID, diags := clients.CompositeIDFromStrFw(req.ID)
-	if diags.HasError() {
-		policyID = req.ID
-	} else {
-		spaceID = compID.ClusterID
-		policyID = compID.ResourceID
-	}
-
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("policy_id"), policyID)...)
-
-	if spaceID != "" {
-		resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("space_ids"), []string{spaceID})...)
-	}
 }
 
 func (r *agentPolicyResource) buildFeatures(ctx context.Context, apiClient *clients.KibanaScopedClient) (features, diag.Diagnostics) {

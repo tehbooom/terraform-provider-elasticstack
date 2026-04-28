@@ -18,9 +18,7 @@
 package spaces
 
 import (
-	"context"
-
-	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
+	"github.com/elastic/terraform-provider-elasticstack/internal/entitycore"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 )
 
@@ -32,31 +30,10 @@ var (
 
 // NewDataSource is a helper function to simplify the provider implementation.
 func NewDataSource() datasource.DataSource {
-	return &dataSource{}
+	return &dataSource{DataSourceBase: entitycore.NewDataSourceBase(entitycore.ComponentKibana, "spaces")}
 }
 
 // dataSource is the data source implementation.
 type dataSource struct {
-	client *clients.ProviderClientFactory
-}
-
-// Metadata returns the data source type name.
-func (d *dataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
-	resp.TypeName = req.ProviderTypeName + "_kibana_spaces"
-}
-
-// Configure adds the provider configured client to the data source.
-func (d *dataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
-	// Add a nil check when handling ProviderData because Terraform
-	// sets that data after it calls the ConfigureProvider RPC.
-	if req.ProviderData == nil {
-		return
-	}
-	factory, diags := clients.ConvertProviderDataToFactory(req.ProviderData)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	d.client = factory
+	*entitycore.DataSourceBase
 }
