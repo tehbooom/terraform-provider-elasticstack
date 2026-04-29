@@ -35,27 +35,27 @@ func run(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("generate-skill", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 
-	specsDir := fs.String("specs", "openspec/specs", "Path to openspec/specs directory")
 	docsDir := fs.String("docs", "docs", "Path to docs directory (tfplugindocs output)")
 	assetsDir := fs.String("assets", "scripts/generate-skill/assets", "Path to hand-seeded static content")
 	outDir := fs.String("out", "dist/skill/elasticstack-terraform", "Output directory for the generated skill")
-	providerVersion := fs.String("provider-version", "", "Provider version to stamp into metadata.version and hand-editable assets (e.g. 0.14.3). Falls back to 0.0.0-dev when empty.")
+	providerVersion := fs.String("provider-version", "", "Provider version to stamp into metadata.version (e.g. 0.14.3). Falls back to 0.0.0-dev when empty.")
 	verbose := fs.Bool("v", false, "Verbose logging")
 
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	entities, err := loadEntities(*specsDir, *docsDir)
+	entities, err := loadEntities(*docsDir)
 	if err != nil {
 		return fmt.Errorf("load entities: %w", err)
 	}
 	if *verbose {
-		fmt.Fprintf(stdout, "loaded %d entities from specs/docs\n", len(entities))
+		fmt.Fprintf(stdout, "loaded %d entities from docs/\n", len(entities))
 	}
 
 	gen := &generator{
 		entities:        entities,
+		docsDir:         *docsDir,
 		assetsDir:       *assetsDir,
 		outDir:          *outDir,
 		providerVersion: *providerVersion,

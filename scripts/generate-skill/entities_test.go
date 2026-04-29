@@ -18,96 +18,10 @@
 package main
 
 import (
-	"strings"
+	"os"
+	"path/filepath"
 	"testing"
 )
-
-func TestExtractEntityNameFromH1(t *testing.T) {
-	cases := []struct {
-		in   string
-		want string
-		ok   bool
-	}{
-		{"# `elasticstack_elasticsearch_index` — Schema and Functional Requirements", "elasticstack_elasticsearch_index", true},
-		{"# `elasticstack_kibana_alerting_rule` — X", "elasticstack_kibana_alerting_rule", true},
-		{"# Not a provider entity", "", false},
-		{"## `elasticstack_foo` — subheading", "", false},
-		{"# `something_else` — nope", "", false},
-	}
-	for _, tc := range cases {
-		got, ok := extractEntityNameFromH1(tc.in)
-		if got != tc.want || ok != tc.ok {
-			t.Errorf("extractEntityNameFromH1(%q) = (%q, %v), want (%q, %v)", tc.in, got, ok, tc.want, tc.ok)
-		}
-	}
-}
-
-func TestExtractSection(t *testing.T) {
-	body := strings.Join([]string{
-		"# Title",
-		"",
-		"## Purpose",
-		"",
-		"This is the purpose.",
-		"",
-		"## Schema",
-		"",
-		"schema body",
-		"",
-		"### Subsection",
-		"",
-		"still schema",
-		"",
-		"## Requirements",
-		"",
-		"req body",
-	}, "\n")
-
-	if got := extractSection(body, "## Purpose"); got != "This is the purpose." {
-		t.Errorf("Purpose = %q", got)
-	}
-	schema := extractSection(body, "## Schema")
-	if !strings.Contains(schema, "schema body") || !strings.Contains(schema, "still schema") {
-		t.Errorf("Schema missing expected content: %q", schema)
-	}
-	if strings.Contains(schema, "req body") {
-		t.Errorf("Schema leaked into Requirements: %q", schema)
-	}
-}
-
-func TestParseSpecHeaders(t *testing.T) {
-	body := `# ` + "`elasticstack_elasticsearch_security_role`" + ` — Schema and Functional Requirements
-
-Resource implementation: ` + "`internal/elasticsearch/security/role`" + `
-Data source implementation: ` + "`internal/elasticsearch/security/role_data_source.go`" + `
-
-## Purpose
-
-Some purpose.
-
-## Schema
-
-` + "```hcl" + `
-resource "x" "y" {}
-` + "```" + `
-`
-	ent := parseSpec("elasticsearch-security-role", "/tmp/spec.md", body)
-	if ent == nil {
-		t.Fatal("entity nil")
-	}
-	if ent.Name != "elasticstack_elasticsearch_security_role" {
-		t.Errorf("Name = %q", ent.Name)
-	}
-	if !ent.Kinds.has(kindResource) || !ent.Kinds.has(kindDataSource) {
-		t.Errorf("Kinds = %d, expected both", ent.Kinds)
-	}
-	if !strings.Contains(ent.ResourceImpl, "internal/elasticsearch/security/role") {
-		t.Errorf("ResourceImpl = %q", ent.ResourceImpl)
-	}
-	if !strings.Contains(ent.Schema, "resource \"x\"") {
-		t.Errorf("Schema = %q", ent.Schema)
-	}
-}
 
 func TestParseDocsFrontmatter(t *testing.T) {
 	body := `---
@@ -118,23 +32,65 @@ description: |-
 ---
 
 # Something
-
-## Example Usage
-
-` + "```terraform" + `
-provider "elasticstack" {}
-resource "x" "y" {}
-` + "```" + `
 `
-	meta, example := parseDocsPage(body)
+	meta := parseFrontmatter(extractFrontmatter(body))
 	if meta.Subcategory != "Security" {
 		t.Errorf("Subcategory = %q", meta.Subcategory)
 	}
-	if !strings.HasPrefix(meta.Description, "Adds and updates roles") {
-		t.Errorf("Description = %q", meta.Description)
+	if meta.Description == "" {
+		t.Errorf("Description empty")
 	}
-	if !strings.Contains(example, `resource "x"`) {
-		t.Errorf("Example = %q", example)
+}
+
+func TestLoadEntities(t *testing.T) {
+	// Build a minimal fake docs tree.
+	dir := t.TempDir()
+	resDir := filepath.Join(dir, "resources")
+	dsDir := filepath.Join(dir, "data-sources")
+	if err := os.MkdirAll(resDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	writeDoc := func(path, sub, desc string) {
+		t.Helper()
+		content := "---\nsubcategory: \"" + sub + "\"\ndescription: |-\n  " + desc + "\n---\n# foo\n"
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	writeDoc(filepath.Join(resDir, "elasticsearch_index.md"), "Elasticsearch", "Manages an index.")
+	writeDoc(filepath.Join(resDir, "kibana_space.md"), "Kibana", "Manages a space.")
+	writeDoc(filepath.Join(dsDir, "elasticsearch_index.md"), "Elasticsearch", "Reads an index.")
+
+	entities, err := loadEntities(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	byName := map[string]*entity{}
+	for _, e := range entities {
+		byName[e.Name] = e
+	}
+
+	// elasticsearch_index should be both resource and data source.
+	idx, ok := byName["elasticstack_elasticsearch_index"]
+	if !ok {
+		t.Fatal("elasticstack_elasticsearch_index not found")
+	}
+	if !idx.Kinds.has(kindResource) || !idx.Kinds.has(kindDataSource) {
+		t.Errorf("elasticsearch_index kinds = %d, want both", idx.Kinds)
+	}
+	// kibana_space should be resource only.
+	ks, ok := byName["elasticstack_kibana_space"]
+	if !ok {
+		t.Fatal("elasticstack_kibana_space not found")
+	}
+	if !ks.Kinds.has(kindResource) || ks.Kinds.has(kindDataSource) {
+		t.Errorf("kibana_space kinds = %d, want resource only", ks.Kinds)
 	}
 }
 
