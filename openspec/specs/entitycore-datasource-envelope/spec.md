@@ -1,5 +1,8 @@
-## ADDED Requirements
+# entitycore-datasource-envelope Specification
 
+## Purpose
+TBD - created by archiving change envelope-datasource-generics. Update Purpose after archive.
+## Requirements
 ### Requirement: Envelope constructor produces a valid DataSource
 The system SHALL provide a generic constructor `NewKibanaDataSource[T]()` (and `NewElasticsearchDataSource[T]()`) that returns a value satisfying `datasource.DataSource`.
 
@@ -17,12 +20,11 @@ The system SHALL inject the scoped connection block (`kibana_connection` or `ela
 - **AND** the concrete schema attributes SHALL remain unchanged
 
 ### Requirement: Envelope owns config deserialization
-The system SHALL deserialize the Terraform config into an internal envelope struct that holds both the connection block and the concrete model.
+The system SHALL decode the Terraform config into the generic model `T`, which embeds the connection block field (via `KibanaConnectionField` or `ElasticsearchConnectionField`).
 
 #### Scenario: Config decode populates concrete model fields
 - **WHEN** `Read` is invoked with a Terraform config containing both `kibana_connection` and concrete attributes
-- **THEN** the concrete model SHALL be deserialized into the generic type parameter `T`
-- **AND** the connection block value SHALL be captured separately
+- **THEN** the model `T` SHALL be deserialized via `req.Config.Get(ctx, &model)`, populating both the connection block (via the embedded helper) and the concrete entity attributes
 
 ### Requirement: Envelope owns scoped client resolution
 The system SHALL resolve the scoped client from the provider factory using the captured connection block value.
@@ -46,11 +48,12 @@ The system SHALL invoke the concrete read function with the scoped client and de
 - **AND** its returned `(T, diag.Diagnostics)` SHALL be used for state setting
 
 ### Requirement: Envelope owns state persistence
-The system SHALL set the Terraform state from the model returned by the concrete read function, preserving the connection block value from the original config.
+The system SHALL set the Terraform state from the model returned by the concrete read function. Because `T` embeds the connection block field, the returned model naturally preserves the original connection block value.
 
 #### Scenario: State set after successful read
 - **WHEN** the concrete read function returns a model without error diagnostics
-- **THEN** `resp.State.Set` SHALL be called with the envelope containing the returned model and the original connection block
+- **THEN** `resp.State.Set` SHALL be called with the returned model `T`
+- **AND** the connection block value present in the returned model SHALL reflect the original config value
 
 #### Scenario: State not set on read function error
 - **WHEN** the concrete read function returns error diagnostics
@@ -63,3 +66,4 @@ The system SHALL NOT break existing data sources that embed `*DataSourceBase` an
 #### Scenario: Struct-based data source continues to work
 - **WHEN** an existing data source uses struct-based embedding without the generic constructor
 - **THEN** its `Configure`, `Metadata`, and `Read` behavior SHALL remain unchanged
+
