@@ -19,9 +19,11 @@ package agentbuilderagent
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/elastic/terraform-provider-elasticstack/generated/kbapi"
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
+	"github.com/elastic/terraform-provider-elasticstack/internal/entitycore"
 	"github.com/elastic/terraform-provider-elasticstack/internal/models"
 	"github.com/elastic/terraform-provider-elasticstack/internal/utils/customtypes"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -68,6 +70,26 @@ type toolModel struct {
 	Configuration             types.String                    `tfsdk:"configuration"`
 	WorkflowID                types.String                    `tfsdk:"workflow_id"`
 	WorkflowConfigurationYaml customtypes.NormalizedYamlValue `tfsdk:"workflow_configuration_yaml"`
+}
+
+// GetKibanaConnection returns the kibana_connection block value, satisfying
+// the entitycore.KibanaDataSourceModel interface required by NewKibanaDataSource.
+func (model agentDataSourceModel) GetKibanaConnection() types.List {
+	return model.KibanaConnection
+}
+
+// GetVersionRequirements returns the static minimum Kibana version requirements
+// for the Agent Builder agent data source. This satisfies the optional
+// entitycore.KibanaDataSourceWithVersionRequirements interface, allowing the
+// generic Kibana data source envelope to enforce the requirement before invoking
+// the entity read callback.
+func (model agentDataSourceModel) GetVersionRequirements() ([]entitycore.DataSourceVersionRequirement, diag.Diagnostics) {
+	return []entitycore.DataSourceVersionRequirement{
+		{
+			MinVersion:   *minKibanaAgentBuilderAPIVersion,
+			ErrorMessage: fmt.Sprintf("Agent Builder agents require Elastic Stack v%s or later.", minKibanaAgentBuilderAPIVersion),
+		},
+	}, nil
 }
 
 func (model *agentDataSourceModel) populateFromAPI(ctx context.Context, spaceID string, data *models.Agent) diag.Diagnostics {

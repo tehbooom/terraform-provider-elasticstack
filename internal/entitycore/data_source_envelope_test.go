@@ -19,10 +19,16 @@ package entitycore
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
+	"github.com/elastic/terraform-provider-elasticstack/internal/clients/config"
 	providerschema "github.com/elastic/terraform-provider-elasticstack/internal/schema"
+	goversion "github.com/hashicorp/go-version"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	dsschema "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -309,4 +315,405 @@ func TestKibanaConnectionField_stateRoundTrip(t *testing.T) {
 	diags = state.Get(ctx, &result)
 	require.False(t, diags.HasError())
 	require.True(t, result.KibanaConnection.IsNull())
+}
+
+// =============================================================================
+// Version-requirement test infrastructure
+// =============================================================================
+
+// newMockKibanaStatusServer returns an httptest.Server that serves a minimal
+// Kibana status JSON payload for GET /api/status. The caller must close the
+// returned server.
+func newMockKibanaStatusServer(versionStr, buildFlavor string) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/api/status" {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"version":{"number":%q,"build_flavor":%q}}`, versionStr, buildFlavor)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+}
+
+// newKibanaFactoryForURL builds a *clients.ProviderClientFactory whose default
+// Kibana client points to kibanaURL. It sets
+// TF_ELASTICSTACK_PREFER_CONFIGURED_KIBANA_ENDPOINT so that KIBANA_ENDPOINT
+// env var cannot override the configured URL.
+func newKibanaFactoryForURL(t *testing.T, kibanaURL string) *clients.ProviderClientFactory {
+	t.Helper()
+	t.Setenv(config.PreferConfiguredKibanaEndpointEnvVar, "true")
+
+	ctx := context.Background()
+	cfg := config.ProviderConfiguration{
+		Kibana: []config.KibanaConnection{
+			{
+				Username:    types.StringValue("elastic"),
+				Password:    types.StringValue("changeme"),
+				APIKey:      types.StringValue(""),
+				BearerToken: types.StringValue(""),
+				Endpoints: types.ListValueMust(types.StringType, []attr.Value{
+					types.StringValue(kibanaURL),
+				}),
+				CACerts:  types.ListValueMust(types.StringType, []attr.Value{}),
+				Insecure: types.BoolValue(false),
+			},
+		},
+	}
+
+	factory, diags := clients.NewProviderClientFactoryFromFramework(ctx, cfg, "test-version")
+	require.False(t, diags.HasError(), "factory construction must not fail: %v", diags)
+	return factory
+}
+
+// newKibanaFactoryMinimal builds a *clients.ProviderClientFactory from an
+// empty ProviderConfiguration. The resulting default client is non-nil so
+// GetKibanaClient succeeds; however the scoped client has no configured
+// endpoint so any HTTP method on it will fail. This is sufficient for read
+// functions that do not make HTTP calls.
+func newKibanaFactoryMinimal(t *testing.T) *clients.ProviderClientFactory {
+	t.Helper()
+	// Prevent environment variables from injecting unexpected endpoints.
+	t.Setenv("KIBANA_ENDPOINT", "")
+	t.Setenv("FLEET_ENDPOINT", "")
+
+	ctx := context.Background()
+	factory, diags := clients.NewProviderClientFactoryFromFramework(ctx, config.ProviderConfiguration{}, "test-version")
+	require.False(t, diags.HasError(), "minimal factory construction must not fail: %v", diags)
+	return factory
+}
+
+// configureDataSource calls Configure on ds with the given factory and asserts
+// no errors.
+func configureDataSource(t *testing.T, ds datasource.DataSource, factory *clients.ProviderClientFactory) {
+	t.Helper()
+	var cfgResp datasource.ConfigureResponse
+	ds.(datasource.DataSourceWithConfigure).Configure(context.Background(), datasource.ConfigureRequest{
+		ProviderData: factory,
+	}, &cfgResp)
+	require.False(t, cfgResp.Diagnostics.HasError(), "Configure must not produce errors: %v", cfgResp.Diagnostics)
+}
+
+// buildReadRequestForSchema constructs a datasource.ReadRequest for the given
+// schema (with kibana_connection already injected). The object value has a
+// null kibana_connection and null string id.
+func buildReadRequestForSchema(schema dsschema.Schema) datasource.ReadRequest {
+	connBlockType := kibanaConnectionBlockType()
+	attrTypes := map[string]tftypes.Type{
+		"kibana_connection": connBlockType,
+	}
+	attrValues := map[string]tftypes.Value{
+		"kibana_connection": tftypes.NewValue(connBlockType, nil),
+	}
+	// Add any string attributes as null strings.
+	for name, attr := range schema.Attributes {
+		_ = attr
+		attrTypes[name] = tftypes.String
+		attrValues[name] = tftypes.NewValue(tftypes.String, nil)
+	}
+	objType := tftypes.Object{AttributeTypes: attrTypes}
+	objValue := tftypes.NewValue(objType, attrValues)
+	return datasource.ReadRequest{
+		Config: tfsdk.Config{Raw: objValue, Schema: schema},
+	}
+}
+
+// =============================================================================
+// Model types used in version-requirement tests
+// =============================================================================
+
+// modelNoVersionReqs is an alias for testModel to make test intent clearer.
+// It does NOT implement KibanaDataSourceWithVersionRequirements.
+// (reuses the existing testModel type)
+
+// modelWithVersionReqsDiagError always returns an error diagnostic from
+// GetVersionRequirements. This exercises the "Version requirement diagnostics
+// stop read" scenario entirely through the Read path.
+type modelWithVersionReqsDiagError struct {
+	KibanaConnectionField
+	ID types.String `tfsdk:"id"`
+}
+
+func (*modelWithVersionReqsDiagError) GetVersionRequirements() ([]DataSourceVersionRequirement, diag.Diagnostics) {
+	return nil, diag.Diagnostics{
+		diag.NewErrorDiagnostic("version requirements error", "injected GetVersionRequirements failure"),
+	}
+}
+
+func getModelWithVersionReqsDiagErrorSchema() dsschema.Schema {
+	return dsschema.Schema{
+		Attributes: map[string]dsschema.Attribute{
+			"id": dsschema.StringAttribute{Computed: true},
+		},
+		Blocks: map[string]dsschema.Block{
+			"kibana_connection": providerschema.GetKbFWConnectionBlock(),
+		},
+	}
+}
+
+// supportedVersionModel has a minimum version that the mock server at 8.19.0
+// will satisfy.
+type supportedVersionModel struct {
+	KibanaConnectionField
+	ID types.String `tfsdk:"id"`
+}
+
+func (*supportedVersionModel) GetVersionRequirements() ([]DataSourceVersionRequirement, diag.Diagnostics) {
+	minVer := goversion.Must(goversion.NewVersion("8.0.0"))
+	return []DataSourceVersionRequirement{{MinVersion: *minVer, ErrorMessage: "needs 8.0.0"}}, nil
+}
+
+func getSupportedVersionModelSchema() dsschema.Schema {
+	return dsschema.Schema{
+		Attributes: map[string]dsschema.Attribute{
+			"id": dsschema.StringAttribute{Computed: true},
+		},
+		Blocks: map[string]dsschema.Block{
+			"kibana_connection": providerschema.GetKbFWConnectionBlock(),
+		},
+	}
+}
+
+// unsupportedVersionModel has a minimum version that the mock server at 7.17.0
+// will NOT satisfy.
+type unsupportedVersionModel struct {
+	KibanaConnectionField
+	ID types.String `tfsdk:"id"`
+}
+
+func (*unsupportedVersionModel) GetVersionRequirements() ([]DataSourceVersionRequirement, diag.Diagnostics) {
+	minVer := goversion.Must(goversion.NewVersion("8.0.0"))
+	return []DataSourceVersionRequirement{{MinVersion: *minVer, ErrorMessage: "requires Kibana 8.0.0 or later"}}, nil
+}
+
+// =============================================================================
+// Subtask 2.1: model without version requirements
+// =============================================================================
+
+// TestNewKibanaDataSource_noVersionReqs_typeAssertionFalse confirms that the
+// standard testModel (no version-requirements interface) does NOT satisfy
+// KibanaDataSourceWithVersionRequirements for either value or pointer forms,
+// so the envelope correctly skips the version-check branch.
+func TestNewKibanaDataSource_noVersionReqs_typeAssertionFalse(t *testing.T) {
+	t.Parallel()
+	var m testModel
+	_, ok := any(m).(KibanaDataSourceWithVersionRequirements)
+	require.False(t, ok, "value testModel must not satisfy KibanaDataSourceWithVersionRequirements")
+	_, ok = any(&m).(KibanaDataSourceWithVersionRequirements)
+	require.False(t, ok, "*testModel must not satisfy KibanaDataSourceWithVersionRequirements")
+}
+
+// TestNewKibanaDataSource_Read_noVersionReqs_readFuncInvoked proves that when a
+// model does NOT implement KibanaDataSourceWithVersionRequirements the envelope
+// calls readFunc and persists state normally.
+//
+// Scenario: Model without version requirements reads normally.
+//
+// NOTE: Uses t.Setenv via newKibanaFactoryMinimal; must NOT call t.Parallel.
+func TestNewKibanaDataSource_Read_noVersionReqs_readFuncInvoked(t *testing.T) {
+	ctx := context.Background()
+
+	readFuncCalled := false
+	ds := NewKibanaDataSource[testModel](ComponentKibana, "test_entity", getTestSchema,
+		func(_ context.Context, _ *clients.KibanaScopedClient, model testModel) (testModel, diag.Diagnostics) {
+			readFuncCalled = true
+			model.ID = types.StringValue("no-version-reqs-result")
+			return model, nil
+		},
+	)
+
+	// Use a minimal factory: GetKibanaClient succeeds (defaultClient non-nil)
+	// but no HTTP calls are made because readFunc ignores the client.
+	factory := newKibanaFactoryMinimal(t)
+	configureDataSource(t, ds, factory)
+
+	schemaWithConn := getTestSchema()
+	schemaWithConn.Blocks = map[string]dsschema.Block{
+		"kibana_connection": providerschema.GetKbFWConnectionBlock(),
+	}
+	req := buildReadRequestForSchema(schemaWithConn)
+
+	var resp datasource.ReadResponse
+	resp.State = tfsdk.State{Schema: schemaWithConn}
+	ds.Read(ctx, req, &resp)
+
+	// Guard: if the factory's defaultClient is nil, GetKibanaClient returns a
+	// "Provider not configured" error before readFunc is ever reached, causing a
+	// false pass when asserting readFuncCalled == false. Detect that here.
+	for _, d := range resp.Diagnostics {
+		require.NotEqual(t, "Provider not configured", d.Summary(),
+			"factory must be configured — test would give a false pass if factory has nil client")
+	}
+	require.True(t, readFuncCalled, "readFunc must be called when model has no version requirements")
+	require.False(t, resp.Diagnostics.HasError(), "Read must not produce errors: %v", resp.Diagnostics)
+
+	var result testModel
+	diags := resp.State.Get(ctx, &result)
+	require.False(t, diags.HasError())
+	require.Equal(t, "no-version-reqs-result", result.ID.ValueString(),
+		"state must reflect the value set by readFunc")
+}
+
+// =============================================================================
+// Subtask 2.2: model WITH version requirements
+// =============================================================================
+
+// TestKibanaDataSourceWithVersionRequirements_pointerAssertionTrue confirms that
+// a model implementing GetVersionRequirements on its pointer receiver satisfies
+// the interface after the any(&model) cast used inside the envelope.
+func TestKibanaDataSourceWithVersionRequirements_pointerAssertionTrue(t *testing.T) {
+	t.Parallel()
+	var m modelWithVersionReqsDiagError
+	// Value form must NOT satisfy the interface (method on pointer receiver).
+	_, ok := any(m).(KibanaDataSourceWithVersionRequirements)
+	require.False(t, ok, "value modelWithVersionReqsDiagError must not satisfy the interface")
+	// Pointer form MUST satisfy it — this matches any(&model) in the envelope.
+	_, ok = any(&m).(KibanaDataSourceWithVersionRequirements)
+	require.True(t, ok, "*modelWithVersionReqsDiagError must satisfy KibanaDataSourceWithVersionRequirements")
+}
+
+// TestKibanaDataSource_Read_versionReqDiagsStopRead exercises the full Read
+// path when GetVersionRequirements returns error diagnostics. The envelope must
+// short-circuit before calling readFunc.
+//
+// Scenario: Version requirement diagnostics stop read.
+//
+// NOTE: Uses t.Setenv via newKibanaFactoryMinimal; must NOT call t.Parallel.
+func TestKibanaDataSource_Read_versionReqDiagsStopRead(t *testing.T) {
+	ctx := context.Background()
+
+	readFuncCalled := false
+	ds := NewKibanaDataSource[modelWithVersionReqsDiagError](ComponentKibana, "diag_err_entity",
+		func() dsschema.Schema {
+			return dsschema.Schema{
+				Attributes: map[string]dsschema.Attribute{
+					"id": dsschema.StringAttribute{Computed: true},
+				},
+			}
+		},
+		func(_ context.Context, _ *clients.KibanaScopedClient, model modelWithVersionReqsDiagError) (modelWithVersionReqsDiagError, diag.Diagnostics) {
+			readFuncCalled = true
+			return model, nil
+		},
+	)
+
+	// Factory must succeed so GetKibanaClient does not short-circuit first.
+	factory := newKibanaFactoryMinimal(t)
+	configureDataSource(t, ds, factory)
+
+	schema := getModelWithVersionReqsDiagErrorSchema()
+	req := buildReadRequestForSchema(schema)
+
+	var resp datasource.ReadResponse
+	ds.Read(ctx, req, &resp)
+
+	require.False(t, readFuncCalled, "readFunc must NOT be called when GetVersionRequirements returns error diags")
+	require.True(t, resp.Diagnostics.HasError(), "Read must propagate error from GetVersionRequirements")
+
+	summaries := make([]string, 0)
+	for _, e := range resp.Diagnostics.Errors() {
+		summaries = append(summaries, e.Summary())
+	}
+	require.Contains(t, summaries, "version requirements error",
+		"diagnostic from GetVersionRequirements must be appended; got: %v", summaries)
+}
+
+// TestKibanaDataSource_Read_supportedServer_invokesReadFunc tests the
+// "Supported server invokes read function" scenario end-to-end with an
+// httptest Kibana server reporting a version that satisfies the minimum
+// requirement.
+//
+// NOTE: Uses t.Setenv via newKibanaFactoryForURL; must NOT call t.Parallel.
+func TestKibanaDataSource_Read_supportedServer_invokesReadFunc(t *testing.T) {
+	ctx := context.Background()
+
+	srv := newMockKibanaStatusServer("8.19.0", "default")
+	defer srv.Close()
+
+	readFuncCalled := false
+	ds := NewKibanaDataSource[supportedVersionModel](ComponentKibana, "supported_entity",
+		func() dsschema.Schema {
+			return dsschema.Schema{
+				Attributes: map[string]dsschema.Attribute{
+					"id": dsschema.StringAttribute{Computed: true},
+				},
+			}
+		},
+		func(_ context.Context, _ *clients.KibanaScopedClient, model supportedVersionModel) (supportedVersionModel, diag.Diagnostics) {
+			readFuncCalled = true
+			model.ID = types.StringValue("supported-result")
+			return model, nil
+		},
+	)
+
+	factory := newKibanaFactoryForURL(t, srv.URL)
+	configureDataSource(t, ds, factory)
+
+	schema := getSupportedVersionModelSchema()
+	req := buildReadRequestForSchema(schema)
+
+	var resp datasource.ReadResponse
+	resp.State = tfsdk.State{Schema: schema}
+	ds.Read(ctx, req, &resp)
+
+	require.False(t, resp.Diagnostics.HasError(),
+		"Read must succeed when server satisfies minimum version: %v", resp.Diagnostics)
+	require.True(t, readFuncCalled, "readFunc must be invoked when server satisfies minimum version")
+
+	var result supportedVersionModel
+	diags := resp.State.Get(ctx, &result)
+	require.False(t, diags.HasError())
+	require.Equal(t, "supported-result", result.ID.ValueString())
+}
+
+// TestKibanaDataSource_Read_unsupportedServer_stopsBeforeReadFunc tests the
+// "Unsupported server stops before read function" scenario end-to-end with an
+// httptest Kibana server reporting a version below the minimum requirement.
+//
+// NOTE: Uses t.Setenv via newKibanaFactoryForURL; must NOT call t.Parallel.
+func TestKibanaDataSource_Read_unsupportedServer_stopsBeforeReadFunc(t *testing.T) {
+	ctx := context.Background()
+
+	// Server reports 7.17.0, which is below the required 8.0.0.
+	srv := newMockKibanaStatusServer("7.17.0", "default")
+	defer srv.Close()
+
+	readFuncCalled := false
+	ds := NewKibanaDataSource[unsupportedVersionModel](ComponentKibana, "unsupported_entity",
+		func() dsschema.Schema {
+			return dsschema.Schema{
+				Attributes: map[string]dsschema.Attribute{
+					"id": dsschema.StringAttribute{Computed: true},
+				},
+			}
+		},
+		func(_ context.Context, _ *clients.KibanaScopedClient, model unsupportedVersionModel) (unsupportedVersionModel, diag.Diagnostics) {
+			readFuncCalled = true
+			return model, nil
+		},
+	)
+
+	factory := newKibanaFactoryForURL(t, srv.URL)
+	configureDataSource(t, ds, factory)
+
+	schema := getSupportedVersionModelSchema()
+	req := buildReadRequestForSchema(schema)
+
+	var resp datasource.ReadResponse
+	ds.Read(ctx, req, &resp)
+
+	require.False(t, readFuncCalled,
+		"readFunc must NOT be called when server is below minimum version")
+	require.True(t, resp.Diagnostics.HasError(),
+		"Read must produce an error diagnostic for unsupported server")
+
+	var foundUnsupported bool
+	for _, e := range resp.Diagnostics.Errors() {
+		if e.Summary() == "Unsupported server version" {
+			foundUnsupported = true
+			require.Contains(t, e.Detail(), "requires Kibana 8.0.0 or later",
+				"Unsupported server version detail must contain the model error message")
+		}
+	}
+	require.True(t, foundUnsupported,
+		"must have an 'Unsupported server version' diagnostic; got: %v", resp.Diagnostics.Errors())
 }
