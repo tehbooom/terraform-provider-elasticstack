@@ -19,7 +19,10 @@ package agentpolicy
 
 import (
 	"context"
+	"fmt"
+	"time"
 
+	"github.com/elastic/terraform-provider-elasticstack/internal/asyncutils"
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients/fleet"
 	fleetutils "github.com/elastic/terraform-provider-elasticstack/internal/fleet"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -72,10 +75,7 @@ func (r *agentPolicyResource) Update(ctx context.Context, req resource.UpdateReq
 		return
 	}
 
-	var existingFeatures []apiAgentFeature
-	if currentPolicy != nil && currentPolicy.AgentFeatures != nil {
-		existingFeatures = *currentPolicy.AgentFeatures
-	}
+	existingFeatures := agentFeaturesFromPolicy(currentPolicy)
 
 	body, diags := planModel.toAPIUpdateModel(ctx, feat, existingFeatures)
 
@@ -93,9 +93,47 @@ func (r *agentPolicyResource) Update(ctx context.Context, req resource.UpdateReq
 		return
 	}
 
+	planWantsTamperProtection := planModel.IsProtected.ValueBool()
+
 	// Populate from API response
 	// With Sets, we don't need order preservation - Terraform handles set comparison automatically
 	planModel.populateFromAPI(ctx, policy)
+
+	if planWantsTamperProtection && !policy.IsProtected {
+		waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+
+		waitErr := asyncutils.WaitForStateTransition(waitCtx, "fleet agent policy", policyID, func(waitCtx context.Context) (bool, error) {
+			reloaded, getDiags := fleet.GetAgentPolicy(waitCtx, fleetClient, policyID, spaceID)
+			if getDiags.HasError() {
+				return false, fmt.Errorf("failed to reload agent policy: %s", getDiags[0].Summary())
+			}
+			if reloaded == nil {
+				return false, nil
+			}
+			if reloaded.IsProtected {
+				policy = reloaded
+				return true, nil
+			}
+			return false, nil
+		})
+		if waitErr == nil {
+			planModel.populateFromAPI(ctx, policy)
+		}
+	}
+
+	if planWantsTamperProtection && !policy.IsProtected {
+		resp.Diagnostics.AddError(
+			"Fleet API did not enable tamper protection",
+			"The agent policy update completed but is_protected is still false. "+
+				"Tamper protection can only be enabled when an Elastic Defend integration policy "+
+				"is attached to this agent policy. First apply with is_protected = false, attach "+
+				"Elastic Defend, then apply again with is_protected = true. Also ensure Elastic "+
+				"Stack 8.10.0 or later, that your license allows tamper protection, and that the "+
+				"Fleet API accepts is_protected on this deployment.",
+		)
+		return
+	}
 
 	diags = resp.State.Set(ctx, planModel)
 	resp.Diagnostics.Append(diags...)

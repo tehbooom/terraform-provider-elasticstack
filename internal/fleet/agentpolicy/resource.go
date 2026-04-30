@@ -34,6 +34,7 @@ var (
 	_ resource.Resource                = newAgentPolicyResource()
 	_ resource.ResourceWithConfigure   = newAgentPolicyResource()
 	_ resource.ResourceWithImportState = newAgentPolicyResource()
+	_ resource.ResourceWithModifyPlan  = newAgentPolicyResource()
 )
 
 var (
@@ -46,6 +47,8 @@ var (
 	MinVersionAgentFeatures       = version.Must(version.NewVersion("8.7.0"))
 	MinVersionAdvancedMonitoring  = version.Must(version.NewVersion("8.16.0"))
 	MinVersionAdvancedSettings    = version.Must(version.NewVersion("8.17.0"))
+	// MinVersionTamperProtection is the minimum stack version for setting agent policy tamper protection (is_protected).
+	MinVersionTamperProtection = version.Must(version.NewVersion("8.10.0"))
 )
 
 type agentPolicyResource struct {
@@ -111,6 +114,11 @@ func (r *agentPolicyResource) buildFeatures(ctx context.Context, apiClient *clie
 		return features{}, diagutil.FrameworkDiagsFromSDK(diags)
 	}
 
+	supportsTamperProtection, diags := apiClient.EnforceMinVersion(ctx, MinVersionTamperProtection)
+	if diags.HasError() {
+		return features{}, diagutil.FrameworkDiagsFromSDK(diags)
+	}
+
 	return features{
 		SupportsGlobalDataTags:      supportsGDT,
 		SupportsSupportsAgentless:   supportsSupportsAgentless,
@@ -121,5 +129,6 @@ func (r *agentPolicyResource) buildFeatures(ctx context.Context, apiClient *clie
 		SupportsAgentFeatures:       supportsAgentFeatures,
 		SupportsAdvancedMonitoring:  supportsAdvancedMonitoring,
 		SupportsAdvancedSettings:    supportsAdvancedSettings,
+		SupportsTamperProtection:    supportsTamperProtection,
 	}, nil
 }

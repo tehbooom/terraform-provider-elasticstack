@@ -43,6 +43,7 @@ resource "elasticstack_kibana_security_detection_rule" "test" {
 
 ### Changes
 
+- Add `is_protected` (tamper protection) to `elasticstack_fleet_agent_policy` ([#2086](https://github.com/elastic/terraform-provider-elasticstack/pull/2086))
 - Align Kibana SLO KQL schema and API mapping with object-form filters, settings, artifacts, and enabled state. ([#2495](https://github.com/elastic/terraform-provider-elasticstack/pull/2495))
 - `elasticstack_kibana_space` now correctly clears `description`, `initials`, `color`, and `image_url` when the configuration sets them to an empty string. Previously those explicit empty-string assignments were silently dropped from the outbound API request and Kibana retained the prior value. ([#2452](https://github.com/elastic/terraform-provider-elasticstack/pull/2452))
 - elasticstack_fleet_agent_policy no longer errors with "Provider produced inconsistent result" when the Fleet API returns an empty description for a policy whose description is unset in the Terraform configuration. ([#2448](https://github.com/elastic/terraform-provider-elasticstack/pull/2448))
