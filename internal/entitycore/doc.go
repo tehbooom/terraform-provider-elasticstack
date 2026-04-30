@@ -57,6 +57,53 @@
 //     )
 //     }
 //
+// # Resource patterns
+//
+// Resources have the same two patterns:
+//
+//  1. **Struct-based embedding** — embed [*ResourceBase] and implement [resource.Resource]
+//     directly. This is the right choice when Create and Update flows diverge
+//     significantly from a uniform shape.
+//
+//  2. **Envelope generics** — use [NewElasticsearchResource] to eliminate duplicated
+//     Read/Delete/Schema preludes for Elasticsearch-backed resources.
+//     The model must satisfy [ElasticsearchResourceModel] (value-receiver GetID and
+//     GetElasticsearchConnection). The concrete resource provides a schema factory
+//     (without elasticsearch_connection block), a read callback returning
+//     (T, bool, diag.Diagnostics), and a delete callback. The envelope injects the
+//     connection block, parses composite IDs, resolves the scoped client, and
+//     persists state. Concrete resources keep Create, Update, and ImportState;
+//     the envelope's default Create and Update return diagnostics so forgotten
+//     overrides fail loudly during runtime instead of silently no-oping.
+//
+//     Example envelope resource:
+//
+//     type myResource struct {
+//     *entitycore.ElasticsearchResource[Data]
+//     }
+//
+//     func readMyEntity(ctx context.Context, client *clients.ElasticsearchScopedClient, resourceID string, state Data) (Data, bool, diag.Diagnostics) {
+//     // API call and model population …
+//     return state, true, nil
+//     }
+//
+//     func deleteMyEntity(ctx context.Context, client *clients.ElasticsearchScopedClient, resourceID string, state Data) diag.Diagnostics {
+//     // API call to delete …
+//     return nil
+//     }
+//
+//     func newMyResource() *myResource {
+//     return &myResource{
+//     ElasticsearchResource: entitycore.NewElasticsearchResource[Data](
+//     entitycore.ComponentElasticsearch,
+//     "my_entity",
+//     getResourceSchema, // returns resource.Schema without elasticsearch_connection block
+//     readMyEntity,
+//     deleteMyEntity,
+//     ),
+//     }
+//     }
+//
 // Component is a typed Terraform resource type-name namespace segment (for example
 // "elasticsearch", "kibana"). It is not a client-resolution kind: the same API family
 // can use different component strings for Terraform naming, such as APM resources
