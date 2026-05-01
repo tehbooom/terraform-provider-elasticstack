@@ -39,6 +39,7 @@ import (
 )
 
 var minVersionAgentPolicy = version.Must(version.NewVersion("8.6.0"))
+var minVersionAgentPolicyTamperProtectionWithDefend = version.Must(version.NewVersion("8.14.0"))
 
 //go:embed testdata/TestAccResourceAgentPolicyFromSDK/main.tf
 var sdkCreateTestConfig string
@@ -117,6 +118,7 @@ func TestAccResourceAgentPolicy(t *testing.T) {
 					resource.TestCheckResourceAttr("elasticstack_fleet_agent_policy.test_policy", "description", "Test Agent Policy"),
 					resource.TestCheckResourceAttr("elasticstack_fleet_agent_policy.test_policy", "monitor_logs", "true"),
 					resource.TestCheckResourceAttr("elasticstack_fleet_agent_policy.test_policy", "monitor_metrics", "false"),
+					resource.TestCheckResourceAttr("elasticstack_fleet_agent_policy.test_policy", "is_protected", "false"),
 					resource.TestCheckResourceAttr("elasticstack_fleet_agent_policy.test_policy", "skip_destroy", "false"),
 					resource.TestCheckResourceAttrWith("elasticstack_fleet_agent_policy.test_policy", "policy_id", func(value string) error {
 						originalPolicyID = value
@@ -143,6 +145,7 @@ func TestAccResourceAgentPolicy(t *testing.T) {
 					resource.TestCheckResourceAttr("elasticstack_fleet_agent_policy.test_policy", "description", "Test Agent Policy"),
 					resource.TestCheckResourceAttr("elasticstack_fleet_agent_policy.test_policy", "monitor_logs", "true"),
 					resource.TestCheckResourceAttr("elasticstack_fleet_agent_policy.test_policy", "monitor_metrics", "false"),
+					resource.TestCheckResourceAttr("elasticstack_fleet_agent_policy.test_policy", "is_protected", "false"),
 					resource.TestCheckResourceAttr("elasticstack_fleet_agent_policy.test_policy", "skip_destroy", "false"),
 					resource.TestCheckResourceAttrWith("elasticstack_fleet_agent_policy.test_policy", "policy_id", func(value string) error {
 						originalPolicyID = value
@@ -1000,4 +1003,74 @@ func TestAccResourceAgentPolicyWithRestrictedUser(t *testing.T) {
 			},
 		},
 	})
+}
+
+func TestAccResourceAgentPolicyTamperProtection(t *testing.T) {
+	policyName := sdkacctest.RandStringFromCharSet(22, sdkacctest.CharSetAlphaNum)
+	spaceID := "tamper-protection-" + sdkacctest.RandStringFromCharSet(8, sdkacctest.CharSetAlphaNum)
+
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:     func() { acctest.PreCheck(t) },
+		CheckDestroy: checkResourceAgentPolicyDestroy,
+		Steps: []resource.TestStep{
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				SkipFunc:                 skipAgentPolicyTamperProtectionTest,
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("step1"),
+				ConfigVariables: config.Variables{
+					"policy_name": config.StringVariable(fmt.Sprintf("Policy %s", policyName)),
+					"space_id":    config.StringVariable(spaceID),
+				},
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("elasticstack_fleet_agent_policy.test_policy", "name", fmt.Sprintf("Policy %s", policyName)),
+					resource.TestCheckResourceAttr("elasticstack_fleet_agent_policy.test_policy", "namespace", "default"),
+					resource.TestCheckResourceAttr("elasticstack_fleet_agent_policy.test_policy", "is_protected", "false"),
+				),
+			},
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				SkipFunc:                 skipAgentPolicyTamperProtectionTest,
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("step2"),
+				ConfigVariables: config.Variables{
+					"policy_name": config.StringVariable(fmt.Sprintf("Policy %s", policyName)),
+					"space_id":    config.StringVariable(spaceID),
+				},
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("elasticstack_fleet_agent_policy.test_policy", "name", fmt.Sprintf("Policy %s", policyName)),
+					resource.TestCheckResourceAttr("elasticstack_fleet_agent_policy.test_policy", "namespace", "default"),
+					resource.TestCheckResourceAttr("elasticstack_fleet_agent_policy.test_policy", "is_protected", "false"),
+					resource.TestCheckResourceAttrSet("elasticstack_fleet_elastic_defend_integration_policy.test", "id"),
+					resource.TestCheckResourceAttrPair("elasticstack_fleet_elastic_defend_integration_policy.test", "agent_policy_id", "elasticstack_fleet_agent_policy.test_policy", "policy_id"),
+				),
+			},
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				SkipFunc:                 skipAgentPolicyTamperProtectionTest,
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("step3"),
+				ConfigVariables: config.Variables{
+					"policy_name": config.StringVariable(fmt.Sprintf("Policy %s", policyName)),
+					"space_id":    config.StringVariable(spaceID),
+				},
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("elasticstack_fleet_agent_policy.test_policy", "name", fmt.Sprintf("Policy %s", policyName)),
+					resource.TestCheckResourceAttr("elasticstack_fleet_agent_policy.test_policy", "namespace", "default"),
+					resource.TestCheckResourceAttr("elasticstack_fleet_agent_policy.test_policy", "is_protected", "true"),
+					resource.TestCheckResourceAttrSet("elasticstack_fleet_elastic_defend_integration_policy.test", "id"),
+					resource.TestCheckResourceAttrPair("elasticstack_fleet_elastic_defend_integration_policy.test", "agent_policy_id", "elasticstack_fleet_agent_policy.test_policy", "policy_id"),
+				),
+			},
+		},
+	})
+}
+
+func skipAgentPolicyTamperProtectionTest() (bool, error) {
+	return versionutils.CheckIfVersionIsUnsupported(maxVersion(minVersionAgentPolicyTamperProtectionWithDefend, agentpolicy.MinVersionSpaceIDs))()
+}
+
+func maxVersion(v1 *version.Version, v2 *version.Version) *version.Version {
+	if v1.GreaterThan(v2) {
+		return v1
+	}
+
+	return v2
 }

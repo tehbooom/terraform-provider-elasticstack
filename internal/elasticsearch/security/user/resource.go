@@ -33,12 +33,18 @@ var (
 )
 
 type userResource struct {
-	*entitycore.ResourceBase
+	*entitycore.ElasticsearchResource[Data]
 }
 
 func newUserResource() *userResource {
 	return &userResource{
-		ResourceBase: entitycore.NewResourceBase(entitycore.ComponentElasticsearch, "security_user"),
+		ElasticsearchResource: entitycore.NewElasticsearchResource[Data](
+			entitycore.ComponentElasticsearch,
+			"security_user",
+			GetSchema,
+			readUser,
+			deleteUser,
+		),
 	}
 }
 

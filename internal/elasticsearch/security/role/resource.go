@@ -36,12 +36,18 @@ var (
 )
 
 type roleResource struct {
-	*entitycore.ResourceBase
+	*entitycore.ElasticsearchResource[Data]
 }
 
 func newRoleResource() *roleResource {
 	return &roleResource{
-		ResourceBase: entitycore.NewResourceBase(entitycore.ComponentElasticsearch, "security_role"),
+		ElasticsearchResource: entitycore.NewElasticsearchResource[Data](
+			entitycore.ComponentElasticsearch,
+			"security_role",
+			getSchemaFactory,
+			readRole,
+			deleteRole,
+		),
 	}
 }
 

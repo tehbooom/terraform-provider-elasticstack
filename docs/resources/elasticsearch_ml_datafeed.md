@@ -16,7 +16,7 @@ Creates and manages Machine Learning datafeeds. Datafeeds retrieve data from Ela
 # Basic ML Datafeed
 resource "elasticstack_elasticsearch_ml_datafeed" "basic" {
   datafeed_id = "my-basic-datafeed"
-  job_id      = elasticstack_elasticsearch_ml_anomaly_detector.example.job_id
+  job_id      = elasticstack_elasticsearch_ml_anomaly_detection_job.example.job_id
   indices     = ["log-data-*"]
 
   query = jsonencode({
@@ -27,7 +27,7 @@ resource "elasticstack_elasticsearch_ml_datafeed" "basic" {
 # Comprehensive ML Datafeed with all options
 resource "elasticstack_elasticsearch_ml_datafeed" "comprehensive" {
   datafeed_id = "my-comprehensive-datafeed"
-  job_id      = elasticstack_elasticsearch_ml_anomaly_detector.example.job_id
+  job_id      = elasticstack_elasticsearch_ml_anomaly_detection_job.example.job_id
   indices     = ["app-logs-*", "system-logs-*"]
 
   query = jsonencode({
@@ -54,17 +54,17 @@ resource "elasticstack_elasticsearch_ml_datafeed" "comprehensive" {
   query_delay        = "60s"
   max_empty_searches = 10
 
-  chunking_config {
+  chunking_config = {
     mode      = "manual"
     time_span = "30m"
   }
 
-  delayed_data_check_config {
+  delayed_data_check_config = {
     enabled      = true
     check_window = "2h"
   }
 
-  indices_options {
+  indices_options = {
     ignore_unavailable = true
     allow_no_indices   = false
     expand_wildcards   = ["open", "closed"]
@@ -89,18 +89,21 @@ resource "elasticstack_elasticsearch_ml_datafeed" "comprehensive" {
 }
 
 # Required ML Job for the datafeed
-resource "elasticstack_elasticsearch_ml_anomaly_detector" "example" {
+resource "elasticstack_elasticsearch_ml_anomaly_detection_job" "example" {
   job_id      = "example-anomaly-job"
   description = "Example anomaly detection job"
 
-  analysis_config {
+  analysis_config = {
     bucket_span = "15m"
-    detectors {
-      function = "count"
-    }
+    detectors = [
+      {
+        function             = "count"
+        detector_description = "Count anomalies"
+      }
+    ]
   }
 
-  data_description {
+  data_description = {
     time_field  = "@timestamp"
     time_format = "epoch_ms"
   }
@@ -186,6 +189,6 @@ Optional:
 Optional:
 
 - `allow_no_indices` (Boolean) If true, wildcard indices expressions that resolve into no concrete indices are ignored. This includes the `_all` string or when no indices are specified.
-- `expand_wildcards` (List of String) Type of index that wildcard patterns can match. If the request can target data streams, this argument determines whether wildcard expressions match hidden data streams. Supports comma-separated values.
+- `expand_wildcards` (Set of String) Type of index that wildcard patterns can match. If the request can target data streams, this argument determines whether wildcard expressions match hidden data streams. Supports comma-separated values.
 - `ignore_throttled` (Boolean, Deprecated) If true, concrete, expanded, or aliased indices are ignored when frozen. This setting is deprecated.
 - `ignore_unavailable` (Boolean) If true, unavailable indices (missing or closed) are ignored.

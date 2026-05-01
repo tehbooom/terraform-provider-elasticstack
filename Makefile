@@ -9,6 +9,8 @@ MARCH = "$$(go env GOOS)_$$(go env GOARCH)"
 
 ACCTEST_PARALLELISM ?= 10
 ACCTEST_PACKAGE_PARALLELISM ?= 6
+ACCTEST_TOTAL_SHARDS ?= 1
+ACCTEST_SHARD_INDEX ?= 0
 ACCTEST_TIMEOUT = 120m
 ACCTEST_COUNT = 1
 TEST ?= ./...
@@ -29,9 +31,9 @@ KIBANA_API_KEY_NAME ?= kibana-api-key
 FLEET_NAME ?= terraform-elasticstack-fleet
 FLEET_ENDPOINT ?= https://$(FLEET_NAME):8220
 
-# Fleet Server image repository. Some older stack versions (notably 7.17.x, 8.0.x, 8.1.x)
+# Fleet Server image repository. Some older stack versions (notably 8.0.x, 8.1.x)
 # do not publish elastic-agent images to docker.elastic.co, so fall back to Docker Hub.
-ifneq (,$(filter 7.17.% 8.0.% 8.1.%,$(STACK_VERSION)))
+ifneq (,$(filter 8.0.% 8.1.%,$(STACK_VERSION)))
 FLEET_IMAGE := elastic/elastic-agent
 endif
 
@@ -65,7 +67,7 @@ testacc-vs-docker:
 
 .PHONY: testacc
 testacc: ## Run acceptance tests
-	TF_ACC=1 go tool gotestsum --format testname --rerun-fails=$(RERUN_FAILS) --rerun-fails-max-failures=$(RERUN_FAILS_MAX_FAILURES) --packages="./..." -- -p $(ACCTEST_PACKAGE_PARALLELISM) -v -count $(ACCTEST_COUNT) -parallel $(ACCTEST_PARALLELISM) $(TESTARGS) -timeout $(ACCTEST_TIMEOUT)
+	TF_ACC=1 go tool gotestsum --format testname --rerun-fails=$(RERUN_FAILS) --rerun-fails-max-failures=$(RERUN_FAILS_MAX_FAILURES) --packages="$(shell go list ./... | sort | awk '(NR-1) % $(ACCTEST_TOTAL_SHARDS) == $(ACCTEST_SHARD_INDEX)')" -- -p $(ACCTEST_PACKAGE_PARALLELISM) -v -count $(ACCTEST_COUNT) -parallel $(ACCTEST_PARALLELISM) $(TESTARGS) -timeout $(ACCTEST_TIMEOUT)
 
 .PHONY: hook-test
 hook-test: ## Run hook JavaScript unit tests

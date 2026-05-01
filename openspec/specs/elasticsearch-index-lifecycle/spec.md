@@ -54,7 +54,7 @@ All ILM action blocks are also `SingleNestedBlock`s.
 ```hcl
 allocate {
   number_of_replicas    = <optional + computed, int>    # default 0
-  total_shards_per_node = <optional + computed, int>    # default -1; non-default requires ES >= 7.16
+  total_shards_per_node = <optional + computed, int>    # default -1
   include               = <optional, json object string>
   exclude               = <optional, json object string>
   require               = <optional, json object string>
@@ -234,20 +234,28 @@ The following minimum versions SHALL apply:
 
 - `rollover.max_primary_shard_docs`: Elasticsearch `8.2.0`
 - `rollover.min_age`, `rollover.min_docs`, `rollover.min_size`, `rollover.min_primary_shard_docs`, `rollover.min_primary_shard_size`: Elasticsearch `8.4.0`
-- `allocate.total_shards_per_node` when not `-1`: Elasticsearch `7.16.0`
 - `shrink.allow_write_after_shrink` when `true`: Elasticsearch `8.14.0`
+
+ILM settings available throughout the supported `8.x` and later range SHALL NOT have pre-8.0 compatibility gates.
 
 #### Scenario: Unsupported rollover min condition
 
-- GIVEN Elasticsearch is older than `8.4.0`
-- WHEN a non-default rollover `min_*` condition is configured
+- GIVEN `rollover.min_docs` is configured with a non-default value
+- AND the connected Elasticsearch server is below `8.4.0`
+- WHEN the policy is expanded
 - THEN the provider SHALL return an unsupported-setting diagnostic
 
-#### Scenario: Unsupported allow-write-after-shrink
+#### Scenario: Unsupported shrink allow-write-after-shrink
 
-- GIVEN Elasticsearch is older than `8.14.0`
+- GIVEN the connected Elasticsearch server is below `8.14.0`
 - WHEN `shrink.allow_write_after_shrink = true` is configured
 - THEN the provider SHALL return an unsupported-setting diagnostic
+
+#### Scenario: Supported-range allocate setting is sent
+
+- GIVEN `allocate.total_shards_per_node` is configured with a value other than `-1`
+- WHEN the policy is expanded against a supported Elasticsearch server version
+- THEN the provider SHALL include `total_shards_per_node` in the API payload
 
 ### Requirement: Read-state normalization (REQ-026–REQ-028)
 
