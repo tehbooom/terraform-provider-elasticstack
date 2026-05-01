@@ -19,9 +19,8 @@ package proxy
 
 import (
 	"context"
-	"fmt"
 
-	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
+	"github.com/elastic/terraform-provider-elasticstack/internal/entitycore"
 	"github.com/hashicorp/go-version"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -35,28 +34,19 @@ var (
 	minVersion = version.Must(version.NewVersion("8.7.1"))
 )
 
+// Resource is the fleet proxy resource.
+type Resource struct {
+	*entitycore.ResourceBase
+}
+
 // NewResource is a helper function to simplify the provider implementation.
 func NewResource() resource.Resource {
-	return &Resource{}
-}
-
-type Resource struct {
-	client *clients.ProviderClientFactory
-}
-
-func (r *Resource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	factory, diags := clients.ConvertProviderDataToFactory(req.ProviderData)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
+	return &Resource{
+		ResourceBase: entitycore.NewResourceBase(entitycore.ComponentFleet, "proxy"),
 	}
-	r.client = factory
 }
 
-func (r *Resource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
-	resp.TypeName = fmt.Sprintf("%s_%s", req.ProviderTypeName, "fleet_proxy")
-}
-
+// ImportState implements resource.ResourceWithImportState.
 func (r *Resource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }
