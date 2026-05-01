@@ -15,21 +15,25 @@
 // specific language governing permissions and limitations
 // under the License.
 
-package enrich
+package exportsavedobjects
 
 import (
-	"reflect"
-	"testing"
-
 	"github.com/elastic/terraform-provider-elasticstack/internal/entitycore"
-	"github.com/stretchr/testify/require"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-func TestDataSource_embedsEntityCoreDataSourceBase(t *testing.T) {
-	t.Parallel()
-	rt := reflect.TypeFor[enrichPolicyDataSource]()
-	field, ok := rt.FieldByName("DataSourceBase")
-	require.True(t, ok)
-	require.True(t, field.Anonymous)
-	require.Equal(t, reflect.TypeFor[*entitycore.DataSourceBase](), field.Type)
+type objectModel struct {
+	Type types.String `tfsdk:"type"`
+	ID   types.String `tfsdk:"id"`
+}
+
+// dataSourceModel maps the data source schema data.
+type dataSourceModel struct {
+	entitycore.KibanaConnectionField
+	ID                    types.String `tfsdk:"id"`
+	SpaceID               types.String `tfsdk:"space_id"`
+	Objects               types.List   `tfsdk:"objects"`
+	ExcludeExportDetails  types.Bool   `tfsdk:"exclude_export_details"`
+	IncludeReferencesDeep types.Bool   `tfsdk:"include_references_deep"`
+	ExportedObjects       types.String `tfsdk:"exported_objects"`
 }
