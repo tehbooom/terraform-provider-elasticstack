@@ -18,68 +18,193 @@
 package integrationds_test
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/elastic/terraform-provider-elasticstack/internal/acctest"
+	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
+	"github.com/elastic/terraform-provider-elasticstack/internal/clients/fleet"
+	"github.com/elastic/terraform-provider-elasticstack/internal/diagutil"
 	"github.com/elastic/terraform-provider-elasticstack/internal/versionutils"
 	"github.com/hashicorp/go-version"
+	"github.com/hashicorp/terraform-plugin-testing/config"
+	sdkacctest "github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
 var minVersionIntegrationDataSource = version.Must(version.NewVersion("8.6.0"))
+var errFleetPackageNotFound = errors.New("fleet package not found")
+
+const integrationDataSourceResourceName = "data.elasticstack_fleet_integration.test"
 
 func TestAccDataSourceIntegration(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		PreCheck:                 func() { acctest.PreCheck(t) },
-		ProtoV6ProviderFactories: acctest.Providers,
+		PreCheck: func() { acctest.PreCheck(t) },
 		Steps: []resource.TestStep{
 			{
-				SkipFunc: versionutils.CheckIfVersionIsUnsupported(minVersionIntegrationDataSource),
-				Config:   testAccDataSourceIntegration,
+				ProtoV6ProviderFactories: acctest.Providers,
+				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(minVersionIntegrationDataSource),
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("read"),
 				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("data.elasticstack_fleet_integration.test", "name", "tcp"),
-					checkResourceAttrStringNotEmpty("data.elasticstack_fleet_integration.test", "version"),
+					resource.TestCheckResourceAttrSet(integrationDataSourceResourceName, "id"),
+					resource.TestCheckResourceAttr(integrationDataSourceResourceName, "name", "tcp"),
+					checkFleetPackageVersion("tcp", false, ""),
 				),
 			},
 		},
 	})
 }
 
-const testAccDataSourceIntegration = `
-provider "elasticstack" {
-  elasticsearch {}
-  kibana {}
+func TestAccDataSourceIntegrationWithSpaceID(t *testing.T) {
+	spaceID := strings.ToLower("test-" + sdkacctest.RandStringFromCharSet(8, sdkacctest.CharSetAlphaNum))
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() { acctest.PreCheck(t) },
+		Steps: []resource.TestStep{
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(minVersionIntegrationDataSource),
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("read"),
+				ConfigVariables: config.Variables{
+					"space_name": config.StringVariable(spaceID),
+					"space_id":   config.StringVariable(spaceID),
+				},
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttrSet(integrationDataSourceResourceName, "id"),
+					resource.TestCheckResourceAttr(integrationDataSourceResourceName, "name", "tcp"),
+					resource.TestCheckResourceAttr(integrationDataSourceResourceName, "space_id", spaceID),
+					checkFleetPackageVersion("tcp", false, spaceID),
+				),
+			},
+		},
+	})
 }
 
-data "elasticstack_fleet_integration" "test" {
-  name = "tcp"
+func TestAccDataSourceIntegrationAlternateName(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() { acctest.PreCheck(t) },
+		Steps: []resource.TestStep{
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(minVersionIntegrationDataSource),
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("read"),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttrSet(integrationDataSourceResourceName, "id"),
+					resource.TestCheckResourceAttr(integrationDataSourceResourceName, "name", "system"),
+					checkFleetPackageVersion("system", false, ""),
+				),
+			},
+		},
+	})
 }
-`
 
-// checkResourceAttrStringNotEmpty verifies that the string value at key
-// is not empty.
-func checkResourceAttrStringNotEmpty(name, key string) resource.TestCheckFunc {
+func TestAccDataSourceIntegrationWithPrerelease(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() { acctest.PreCheck(t) },
+		Steps: []resource.TestStep{
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(minVersionIntegrationDataSource),
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("read"),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttrSet(integrationDataSourceResourceName, "id"),
+					resource.TestCheckResourceAttr(integrationDataSourceResourceName, "name", "apm"),
+					resource.TestCheckResourceAttr(integrationDataSourceResourceName, "prerelease", "true"),
+					checkFleetPackageVersion("apm", true, ""),
+					checkFleetPackageVersionChangesWhenPrereleaseEnabled("apm", ""),
+				),
+			},
+		},
+	})
+}
+
+func TestAccDataSourceIntegrationKibanaConnection(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			acctest.PreCheck(t)
+			acctest.PreCheckWithExplicitKibanaEndpoint(t)
+		},
+		Steps: []resource.TestStep{
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(minVersionIntegrationDataSource),
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("read"),
+				ConfigVariables:          acctest.KibanaConnectionVariables(),
+				Check: resource.ComposeTestCheckFunc(
+					append([]resource.TestCheckFunc{
+						resource.TestCheckResourceAttrSet(integrationDataSourceResourceName, "id"),
+						resource.TestCheckResourceAttr(integrationDataSourceResourceName, "name", "tcp"),
+						checkFleetPackageVersion("tcp", false, ""),
+						resource.TestCheckResourceAttr(integrationDataSourceResourceName, "kibana_connection.#", "1"),
+						resource.TestCheckResourceAttr(integrationDataSourceResourceName, "kibana_connection.0.endpoints.#", "1"),
+						resource.TestCheckResourceAttr(integrationDataSourceResourceName, "kibana_connection.0.endpoints.0", strings.TrimSpace(os.Getenv("KIBANA_ENDPOINT"))),
+						resource.TestCheckResourceAttr(integrationDataSourceResourceName, "kibana_connection.0.insecure", "false"),
+					}, acctest.KibanaConnectionAuthChecks(integrationDataSourceResourceName)...)...,
+				),
+			},
+		},
+	})
+}
+
+func checkFleetPackageVersion(packageName string, prerelease bool, spaceID string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
-		ms := s.RootModule()
-		rs, ok := ms.Resources[name]
-		if !ok {
-			return fmt.Errorf("not found: %s in %s", name, ms.Path)
-		}
-		is := rs.Primary
-		if is == nil {
-			return fmt.Errorf("no primary instance: %s in %s", name, ms.Path)
+		expectedVersion, err := fleetPackageVersion(packageName, prerelease, spaceID)
+		if err != nil {
+			return err
 		}
 
-		v, ok := is.Attributes[key]
-		if !ok {
-			return fmt.Errorf("%s: Attribute '%s' not found", name, key)
+		return resource.TestCheckResourceAttr(integrationDataSourceResourceName, "version", expectedVersion)(s)
+	}
+}
+
+func checkFleetPackageVersionChangesWhenPrereleaseEnabled(packageName, spaceID string) resource.TestCheckFunc {
+	return func(*terraform.State) error {
+		prereleaseVersion, err := fleetPackageVersion(packageName, true, spaceID)
+		if err != nil {
+			return err
 		}
-		if v == "" {
-			return fmt.Errorf("%s: Attribute '%s' expected non-empty string", name, key)
+
+		gaVersion, err := fleetPackageVersion(packageName, false, spaceID)
+		if err != nil {
+			if errors.Is(err, errFleetPackageNotFound) {
+				return nil
+			}
+			return err
+		}
+
+		if gaVersion == prereleaseVersion {
+			return fmt.Errorf("expected package %q to resolve differently when prerelease is enabled, but both versions were %q", packageName, gaVersion)
 		}
 
 		return nil
 	}
+}
+
+func fleetPackageVersion(packageName string, prerelease bool, spaceID string) (string, error) {
+	client, err := clients.NewAcceptanceTestingKibanaScopedClient()
+	if err != nil {
+		return "", err
+	}
+
+	fleetClient, err := client.GetFleetClient()
+	if err != nil {
+		return "", err
+	}
+
+	packages, diags := fleet.GetPackages(context.Background(), fleetClient, prerelease, spaceID)
+	if diags.HasError() {
+		return "", diagutil.FwDiagsAsError(diags)
+	}
+
+	for _, pkg := range packages {
+		if pkg.Name == packageName {
+			return pkg.Version, nil
+		}
+	}
+
+	return "", fmt.Errorf("%w: %q (prerelease=%t, space_id=%q)", errFleetPackageNotFound, packageName, prerelease, spaceID)
 }

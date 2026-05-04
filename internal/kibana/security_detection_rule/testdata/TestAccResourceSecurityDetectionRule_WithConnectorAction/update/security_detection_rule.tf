@@ -68,9 +68,9 @@ resource "elasticstack_kibana_security_detection_rule" "test" {
     {
       action_type_id = ".cases-webhook"
       id             = elasticstack_kibana_action_connector.test.connector_id
-      params = {
+      params = jsonencode({
         message = "UPDATED CRITICAL Alert: Security event detected"
-      }
+      })
       group = "default"
       frequency = {
         notify_when = "onActiveAlert"

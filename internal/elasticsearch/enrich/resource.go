@@ -23,6 +23,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
 	"github.com/hashicorp/terraform-plugin-framework-validators/setvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
@@ -33,37 +34,48 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
-	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
+	"github.com/elastic/terraform-provider-elasticstack/internal/entitycore"
 	providerschema "github.com/elastic/terraform-provider-elasticstack/internal/schema"
 )
 
-func NewEnrichPolicyResource() resource.Resource {
-	return &enrichPolicyResource{}
-}
+// Ensure provider defined types fully satisfy framework interfaces
+var (
+	_ resource.Resource                = newEnrichPolicyResource()
+	_ resource.ResourceWithConfigure   = newEnrichPolicyResource()
+	_ resource.ResourceWithImportState = newEnrichPolicyResource()
+)
 
 type enrichPolicyResource struct {
-	client *clients.APIClient
+	*entitycore.ResourceBase
 }
 
-func (r *enrichPolicyResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
-	resp.TypeName = req.ProviderTypeName + "_elasticsearch_enrich_policy"
+func newEnrichPolicyResource() *enrichPolicyResource {
+	return &enrichPolicyResource{
+		ResourceBase: entitycore.NewResourceBase(entitycore.ComponentElasticsearch, "enrich_policy"),
+	}
 }
 
-func (r *enrichPolicyResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	client, diags := clients.ConvertProviderData(req.ProviderData)
-	resp.Diagnostics.Append(diags...)
-	r.client = client
+func NewEnrichPolicyResource() resource.Resource {
+	return newEnrichPolicyResource()
 }
 
 func (r *enrichPolicyResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = GetResourceSchema()
 }
 
+func (r *enrichPolicyResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("execute"), types.BoolValue(true))...)
+}
+
 func GetResourceSchema() schema.Schema {
 	return schema.Schema{
 		MarkdownDescription: "Managing Elasticsearch enrich policies. See the [enrich API documentation](https://www.elastic.co/guide/en/elasticsearch/reference/current/enrich-apis.html) for more details.",
 		Blocks: map[string]schema.Block{
-			"elasticsearch_connection": providerschema.GetEsFWConnectionBlock(false),
+			"elasticsearch_connection": providerschema.GetEsFWConnectionBlock(),
 		},
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{

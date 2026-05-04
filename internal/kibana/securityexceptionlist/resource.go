@@ -19,37 +19,31 @@ package securityexceptionlist
 
 import (
 	"context"
-	"fmt"
 
-	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
+	"github.com/elastic/terraform-provider-elasticstack/internal/entitycore"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 )
 
 var (
-	_ resource.Resource                = &ExceptionListResource{}
-	_ resource.ResourceWithConfigure   = &ExceptionListResource{}
-	_ resource.ResourceWithImportState = &ExceptionListResource{}
+	_ resource.Resource                = newExceptionListResource()
+	_ resource.ResourceWithConfigure   = newExceptionListResource()
+	_ resource.ResourceWithImportState = newExceptionListResource()
 )
+
+type ExceptionListResource struct {
+	*entitycore.ResourceBase
+}
+
+func newExceptionListResource() *ExceptionListResource {
+	return &ExceptionListResource{
+		ResourceBase: entitycore.NewResourceBase(entitycore.ComponentKibana, "security_exception_list"),
+	}
+}
 
 // NewResource is a helper function to simplify the provider implementation.
 func NewResource() resource.Resource {
-	return &ExceptionListResource{}
-}
-
-type ExceptionListResource struct {
-	client *clients.APIClient
-}
-
-func (r *ExceptionListResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	client, diags := clients.ConvertProviderData(req.ProviderData)
-	resp.Diagnostics.Append(diags...)
-	r.client = client
-}
-
-// Metadata returns the provider type name.
-func (r *ExceptionListResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
-	resp.TypeName = fmt.Sprintf("%s_%s", req.ProviderTypeName, "kibana_security_exception_list")
+	return newExceptionListResource()
 }
 
 func (r *ExceptionListResource) ImportState(ctx context.Context, request resource.ImportStateRequest, response *resource.ImportStateResponse) {

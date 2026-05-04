@@ -20,34 +20,30 @@ package securitylist
 import (
 	"context"
 
-	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
+	"github.com/elastic/terraform-provider-elasticstack/internal/entitycore"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 )
 
 // Ensure provider defined types fully satisfy framework interfaces
 var (
-	_ resource.Resource                = &securityListResource{}
-	_ resource.ResourceWithConfigure   = &securityListResource{}
-	_ resource.ResourceWithImportState = &securityListResource{}
+	_ resource.Resource                = newSecurityListResource()
+	_ resource.ResourceWithConfigure   = newSecurityListResource()
+	_ resource.ResourceWithImportState = newSecurityListResource()
 )
 
-func NewResource() resource.Resource {
-	return &securityListResource{}
-}
-
 type securityListResource struct {
-	client *clients.APIClient
+	*entitycore.ResourceBase
 }
 
-func (r *securityListResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
-	resp.TypeName = req.ProviderTypeName + "_kibana_security_list"
+func newSecurityListResource() *securityListResource {
+	return &securityListResource{
+		ResourceBase: entitycore.NewResourceBase(entitycore.ComponentKibana, "security_list"),
+	}
 }
 
-func (r *securityListResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	client, diags := clients.ConvertProviderData(req.ProviderData)
-	resp.Diagnostics.Append(diags...)
-	r.client = client
+func NewResource() resource.Resource {
+	return newSecurityListResource()
 }
 
 func (r *securityListResource) ImportState(ctx context.Context, request resource.ImportStateRequest, response *resource.ImportStateResponse) {

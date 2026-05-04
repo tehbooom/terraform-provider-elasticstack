@@ -21,36 +21,43 @@ import (
 	"context"
 
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
+	"github.com/elastic/terraform-provider-elasticstack/internal/entitycore"
 	"github.com/elastic/terraform-provider-elasticstack/internal/kibana/synthetics"
 	"github.com/hashicorp/terraform-plugin-framework-validators/resourcevalidator"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 )
 
-const resourceName = synthetics.MetadataPrefix + "monitor"
+// Resource represents a synthetics monitor resource
+type Resource struct {
+	*entitycore.ResourceBase
+}
 
-// NewResource creates a new synthetics monitor resource
-func NewResource(validateLocation bool) resource.Resource {
+func newResource() *Resource {
 	return &Resource{
-		validateLocation: validateLocation,
+		ResourceBase: entitycore.NewResourceBase(entitycore.ComponentKibana, "synthetics_monitor"),
 	}
 }
 
 // Ensure provider-defined types fully satisfy framework interfaces
-var _ resource.Resource = &Resource{}
-var _ resource.ResourceWithConfigure = &Resource{}
-var _ resource.ResourceWithImportState = &Resource{}
-var _ resource.ResourceWithConfigValidators = &Resource{}
-var _ synthetics.ESAPIClient = &Resource{}
+var (
+	_ resource.Resource                     = newResource()
+	_ resource.ResourceWithConfigure        = newResource()
+	_ resource.ResourceWithImportState      = newResource()
+	_ resource.ResourceWithConfigValidators = newResource()
+	_ synthetics.ESAPIClient                = newResource()
+)
 
-// Resource represents a synthetics monitor resource
-type Resource struct {
-	validateLocation bool
-	client           *clients.APIClient
+// NewResource creates a new synthetics monitor resource
+func NewResource() resource.Resource {
+	return newResource()
 }
 
-func (r *Resource) GetClient() *clients.APIClient {
-	return r.client
+func (r *Resource) GetClient() *clients.KibanaScopedClient {
+	if r.Client() == nil {
+		return nil
+	}
+	return clients.NewKibanaScopedClientFromFactory(r.Client())
 }
 
 func (r *Resource) ConfigValidators(_ context.Context) []resource.ConfigValidator {
@@ -72,16 +79,6 @@ func (r *Resource) ImportState(ctx context.Context, request resource.ImportState
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), request, response)
 }
 
-func (r *Resource) Configure(_ context.Context, request resource.ConfigureRequest, response *resource.ConfigureResponse) {
-	client, diags := clients.ConvertProviderData(request.ProviderData)
-	response.Diagnostics.Append(diags...)
-	r.client = client
-}
-
-func (r *Resource) Metadata(_ context.Context, request resource.MetadataRequest, response *resource.MetadataResponse) {
-	response.TypeName = request.ProviderTypeName + resourceName
-}
-
 func (r *Resource) Schema(_ context.Context, _ resource.SchemaRequest, response *resource.SchemaResponse) {
-	response.Schema = monitorConfigSchema(r.validateLocation)
+	response.Schema = monitorConfigSchema()
 }

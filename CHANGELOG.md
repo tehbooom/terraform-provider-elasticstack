@@ -1,13 +1,95 @@
 ## [Unreleased]
 
+### Breaking changes
+
+
+#### `elasticstack_kibana_security_detection_rule` action `params` format change
+
+Previously `elasticstack_kibana_security_detection_rule` used a map of strings for action parameters. This caused issues with actions requiring non-string based parameters (see https://github.com/elastic/terraform-provider-elasticstack/issues/2339 for an example). This has been changed to a single JSON string value which supports arbitrary param values. 
+
+Previously
+
+```hcl
+resource "elasticstack_kibana_security_detection_rule" "test" {
+...
+
+  actions = [
+    {
+...
+      params = {
+        message = "Test state upgrade alert"
+      }
+...
+  ]
+}
+```
+
+becomes 
+
+```hcl
+resource "elasticstack_kibana_security_detection_rule" "test" {
+...
+
+  actions = [
+    {
+...
+      params = jsonencode({
+        message = "Test state upgrade alert"
+      })
+...
+  ]
+}
+```
+
 ### Changes
 
+- Align Kibana SLO KQL schema and API mapping with object-form filters, settings, artifacts, and enabled state. ([#2495](https://github.com/elastic/terraform-provider-elasticstack/pull/2495))
+- `elasticstack_kibana_space` now correctly clears `description`, `initials`, `color`, and `image_url` when the configuration sets them to an empty string. Previously those explicit empty-string assignments were silently dropped from the outbound API request and Kibana retained the prior value. ([#2452](https://github.com/elastic/terraform-provider-elasticstack/pull/2452))
+- elasticstack_fleet_agent_policy no longer errors with "Provider produced inconsistent result" when the Fleet API returns an empty description for a policy whose description is unset in the Terraform configuration. ([#2448](https://github.com/elastic/terraform-provider-elasticstack/pull/2448))
+- Migrate `elasticstack_elasticsearch_index_template` resource and data source to the Terraform Plugin Framework. Existing state is upgraded automatically (v0 → v1); attribute names, paths, block syntax, identity, and import behavior are preserved. ([#2515](https://github.com/elastic/terraform-provider-elasticstack/pull/2515))
+- `elasticstack_fleet_integration_policy` can now be imported from non-default Kibana spaces using a composite `<space_id>/<policy_id>` import ID ([#2522](https://github.com/elastic/terraform-provider-elasticstack/pull/2522))
+- Add `template.data_stream_options` block to `elasticstack_elasticsearch_index_template` to configure the failure store for new data streams via Terraform ([#2509](https://github.com/elastic/terraform-provider-elasticstack/pull/2509))
+- elasticstack_fleet_integration now detects out-of-band package upgrades and downgrades during refresh by consulting InstallationInfo.Version; terraform plan surfaces the drift instead of reporting "No changes". ([#2447](https://github.com/elastic/terraform-provider-elasticstack/pull/2447))
+- elasticstack_elasticsearch_security_role now detects out-of-band drift on description, metadata, and other attributes during refresh; terraform plan no longer silently returns "No changes" when a role is modified outside Terraform. ([#2446](https://github.com/elastic/terraform-provider-elasticstack/pull/2446))
+- New `elasticstack_fleet_custom_integration` resource for uploading and managing locally-built Fleet integration packages via the EPM binary upload API ([#2387](https://github.com/elastic/terraform-provider-elasticstack/pull/2387))
+- Change `elasticstack_kibana_security_detection_rule.actions[].params` to a JSON string rather than a map of string values. This allows setting arbitrary, nested param values ([#2340](https://github.com/elastic/terraform-provider-elasticstack/pull/2340))
+- Add import support to the elasticstack_elasticsearch_enrich_policy resource ([#2427](https://github.com/elastic/terraform-provider-elasticstack/pull/2427))
+- Add ssl.verification_mode attribute to the elasticstack_fleet_output ssl block ([#2415](https://github.com/elastic/terraform-provider-elasticstack/pull/2415))
+
+## [0.14.5] - 2026-04-21
+
+- Fix `elasticstack_kibana_slo.metric_custom_indicator` to support doc_count aggregation by making field optional and sending the no-field API variant ([#2394](https://github.com/elastic/terraform-provider-elasticstack/pull/2394))
+- Fix "provider produced inconsistent result after apply" for SLO resources when objective target, timeslice target, or histogram range from/to values are not exactly representable in float32 ([#2401](https://github.com/elastic/terraform-provider-elasticstack/pull/2401))
+- Add `elasticstack_fleet_agent_download_source` resource ([#2081](https://github.com/elastic/terraform-provider-elasticstack/pull/2081))
+
+## [0.14.4] - 2026-04-20
+
+### Changes
+
+- Add `elasticstack_kibana_agentbuilder_agent` resource and data source ([#2295](https://github.com/elastic/terraform-provider-elasticstack/pull/2295))
+- Add `create_new_copies` and `compatibility_mode` attributes to `elasticstack_kibana_import_saved_objects` ([#2289](https://github.com/elastic/terraform-provider-elasticstack/pull/2289))
+- Fix `elasticstack_elasticsearch_watch` updates when Watcher redacts nested action secrets on refresh. ([#2296](https://github.com/elastic/terraform-provider-elasticstack/pull/2296))
+- Migrated `elasticstack_elasticsearch_watch` to the Terraform Plugin Framework ([#2287](https://github.com/elastic/terraform-provider-elasticstack/pull/2287))
+- Add `elasticstack_kibana_agentbuilder_tool` resource and data source ([#2111](https://github.com/elastic/terraform-provider-elasticstack/pull/2111))
+- Fix state consistency with semantic text types in `elasticstack_elasticsearch_index` ([#2112](https://github.com/elastic/terraform-provider-elasticstack/pull/2112))
+- Add `elasticstack_elasticsearch_inference_endpoint` resource. ([#1955](https://github.com/elastic/terraform-provider-elasticstack/pull/1955))
+- `elasticstack_kibana_data_view`: Support in-place updates of the `namespaces` field via the Kibana Spaces API (`POST /api/spaces/_update_objects_spaces`), preventing data view recreation when sharing across spaces. Previously, any change to `namespaces` would force replacement of the resource, breaking dependent alerting rules that reference the data view by ID. ([#2129](https://github.com/elastic/terraform-provider-elasticstack/pull/2129))
+- Add `elasticstack_kibana_agentbuilder_workflow` resource and data source ([#1923](https://github.com/elastic/terraform-provider-elasticstack/pull/1923))
 - Add `elasticstack_fleet_output` data source. ([#1762](https://github.com/elastic/terraform-provider-elasticstack/pull/1762))
 - Fix `termField` validation for ESQL `.es-query` alert rules in `elasticstack_kibana_alerting_rule`. ([#1914](https://github.com/elastic/terraform-provider-elasticstack/pull/1914))
 - Fix perpetual diff in `elasticstack_elasticsearch_index_template` if `search_routing` or `index_routing` was unset but `routing` was set ([#1841](https://github.com/elastic/terraform-provider-elasticstack/pull/1841))
 - Fix provider panic in `elasticstack_fleet_integration_policy` when the integration version is no longer available in the package registry. ([#1913](https://github.com/elastic/terraform-provider-elasticstack/pull/1913))
+- Add `elasticstack_elasticsearch_ingest_processor_inference` data source ([#1956](https://github.com/elastic/terraform-provider-elasticstack/pull/1956))
 - Add an experimental flag to skip synthetics location validation. ([#1924](https://github.com/elastic/terraform-provider-elasticstack/pull/1924))
-- Add flapping detection to `elasticstack_kibana_alerting_rule`. ([1966](https://github.com/elastic/terraform-provider-elasticstack/pull/1966))
+- Add flapping detection to `elasticstack_kibana_alerting_rule`. ([#1966](https://github.com/elastic/terraform-provider-elasticstack/pull/1966))
+- Attempt recovery when data view creation fails ([#2024](https://github.com/elastic/terraform-provider-elasticstack/pull/2024))
+- Fix several "Provider produced inconsistent result after apply" errors in the anomaly detection job resource. ([#2034](https://github.com/elastic/terraform-provider-elasticstack/pull/2034))
+- Remove deprecation warning on the `elasticsearch_connection` attribute provider wide ([#2100](https://github.com/elastic/terraform-provider-elasticstack/pull/2100))
+- Migrate `elasticstack_elasticsearch_index_lifecycle` to the Terraform Plugin Framework ([#2002](https://github.com/elastic/terraform-provider-elasticstack/pull/2002))
+- Add `space_id` to `elasticstack_kibana_synthetics_private_location` ([#2142](https://github.com/elastic/terraform-provider-elasticstack/pull/2142))
+- Use space-scoped endpoints for Fleet resources to allow space-restricted roles to properly manage Fleet resources. ([#2084](https://github.com/elastic/terraform-provider-elasticstack/pull/2084))
+- Fix perpetual `id` "known after apply" diff in `elasticstack_elasticsearch_security_role` by adding `UseStateForUnknown` plan modifier to the computed `id` attribute. ([#2160](https://github.com/elastic/terraform-provider-elasticstack/pull/2160))
+- Add `elasticstack_fleet_elastic_defend_integration_policy` resource ([#2147](https://github.com/elastic/terraform-provider-elasticstack/pull/2147))
 
 
 ## [0.14.3] - 2026-03-02
@@ -254,7 +336,7 @@ alias = [
   - Gracefully handle response action with no provided `frequency`
   - Add validation for required `anomaly_threshold` field in anomaly detection rules
   - Add support for `timeline_id` / `timeline_title` fields
-  - Gracefully handle `threat_query` not being provided for `threat_match` ule
+  - Gracefully handle `threat_query` not being provided for `threat_match` rule
 
 ## [0.11.19] - 2025-10-22
 
@@ -272,7 +354,7 @@ Version 0.11.19 is equivalent to 0.12.1. It is being released to help mitigate i
   - Gracefully handle response action with no provided `frequency`
   - Add validation for required `anomaly_threshold` field in anomaly detection rules
   - Add support for `timeline_id` / `timeline_title` fields
-  - Gracefully handle `threat_query` not being provided for `threat_match` ule
+  - Gracefully handle `threat_query` not being provided for `threat_match` rule
 
 ## [0.11.18] - 2025-10-10
 
@@ -765,7 +847,9 @@ resource "elasticstack_fleet_output" "output" {
 - Initial set of docs
 - CI integration
 
-[Unreleased]: https://github.com/elastic/terraform-provider-elasticstack/compare/v0.14.3...HEAD
+[Unreleased]: https://github.com/elastic/terraform-provider-elasticstack/compare/v0.14.5...HEAD
+[0.14.5]: https://github.com/elastic/terraform-provider-elasticstack/compare/v0.14.4...v0.14.5
+[0.14.4]: https://github.com/elastic/terraform-provider-elasticstack/compare/v0.14.3...v0.14.4
 [0.14.3]: https://github.com/elastic/terraform-provider-elasticstack/compare/v0.14.2...v0.14.3
 [0.14.2]: https://github.com/elastic/terraform-provider-elasticstack/compare/v0.14.1...v0.14.2
 [0.14.1]: https://github.com/elastic/terraform-provider-elasticstack/compare/v0.14.0...v0.14.1

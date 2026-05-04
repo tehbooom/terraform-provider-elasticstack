@@ -25,8 +25,9 @@ import (
 	"testing"
 
 	"github.com/elastic/terraform-provider-elasticstack/internal/acctest"
+	"github.com/elastic/terraform-provider-elasticstack/internal/acctest/checks"
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
-	"github.com/elastic/terraform-provider-elasticstack/internal/clients/kibana"
+	kibanaoapi "github.com/elastic/terraform-provider-elasticstack/internal/clients/kibanaoapi"
 	"github.com/elastic/terraform-provider-elasticstack/internal/kibana/slo"
 	"github.com/elastic/terraform-provider-elasticstack/internal/versionutils"
 	"github.com/hashicorp/go-version"
@@ -39,6 +40,17 @@ import (
 )
 
 var sloTimesliceMetricsMinVersion = version.Must(version.NewVersion("8.12.0"))
+
+// skipKqlSLOOrSettingsSyncFieldUnsupported gates acceptance steps that apply settings.sync_field
+// (and the enabled field exercised together with it). Kibana <8.18 rejects that key with HTTP 400
+// (excess keys: body.settings.syncField). Plan-only and tests that omit sync_field use
+// CheckIfVersionMeetsConstraints(SLOKqlAccTestConstraints) only.
+func skipKqlSLOOrSettingsSyncFieldUnsupported() (bool, error) {
+	if skip, err := versionutils.CheckIfVersionMeetsConstraints(slo.SLOKqlAccTestConstraints)(); err != nil || skip {
+		return skip, err
+	}
+	return versionutils.CheckIfVersionIsUnsupported(slo.SLOSettingsSyncFieldMinVersion)()
+}
 
 func TestAccResourceSlo(t *testing.T) {
 	// This test exposes a bug in Kibana present in 8.11.x
@@ -286,7 +298,7 @@ func TestAccResourceSlo(t *testing.T) {
 	}
 }
 
-//go:embed testdata/TestAccResourceSloGroupBy/single_element/test.tf
+//go:embed testdata/TestAccResourceSloGroupBy/single_element/main.tf
 var singleElementConfig string
 
 func TestAccResourceSloGroupBy(t *testing.T) {
@@ -530,6 +542,37 @@ func TestAccResourceSlo_timeslice_metric_indicator_multiple_mixed_metrics(t *tes
 	})
 }
 
+func TestAccResourceSlo_metric_custom_indicator_doc_count(t *testing.T) {
+	sloName := sdkacctest.RandStringFromCharSet(22, sdkacctest.CharSetAlphaNum)
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { acctest.PreCheck(t) },
+		CheckDestroy: checkResourceSloDestroy,
+		Steps: []resource.TestStep{
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(sloTimesliceMetricsMinVersion),
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("test"),
+				ConfigVariables: config.Variables{
+					"name": config.StringVariable(sloName),
+				},
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "metric_custom_indicator.0.index", "my-index-"+sloName),
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "metric_custom_indicator.0.good.0.metrics.0.name", "A"),
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "metric_custom_indicator.0.good.0.metrics.0.aggregation", "doc_count"),
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "metric_custom_indicator.0.good.0.metrics.0.filter", "status: 200"),
+					resource.TestCheckNoResourceAttr("elasticstack_kibana_slo.test_slo", "metric_custom_indicator.0.good.0.metrics.0.field"),
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "metric_custom_indicator.0.good.0.equation", "A"),
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "metric_custom_indicator.0.total.0.metrics.0.name", "B"),
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "metric_custom_indicator.0.total.0.metrics.0.aggregation", "doc_count"),
+					resource.TestCheckNoResourceAttr("elasticstack_kibana_slo.test_slo", "metric_custom_indicator.0.total.0.metrics.0.filter"),
+					resource.TestCheckNoResourceAttr("elasticstack_kibana_slo.test_slo", "metric_custom_indicator.0.total.0.metrics.0.field"),
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "metric_custom_indicator.0.total.0.equation", "B"),
+				),
+			},
+		},
+	})
+}
+
 func TestAccResourceSloErrors(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() { acctest.PreCheck(t) },
@@ -574,7 +617,7 @@ func TestAccResourceSloValidation(t *testing.T) {
 					"name":   config.StringVariable("short"),
 					"slo_id": config.StringVariable("sh"),
 				},
-				ExpectError: regexp.MustCompile(`Attribute slo_id string length must be between 8 and 48, got: 2`),
+				ExpectError: regexp.MustCompile(`Attribute slo_id string length must be between 8 and 36, got: 2`),
 			},
 			{
 				ProtoV6ProviderFactories: acctest.Providers,
@@ -583,7 +626,7 @@ func TestAccResourceSloValidation(t *testing.T) {
 					"name":   config.StringVariable("toolongid"),
 					"slo_id": config.StringVariable("this-id-is-way-too-long-and-exceeds-the-48-character-limit-for-slo-ids"),
 				},
-				ExpectError: regexp.MustCompile(`Attribute slo_id string length must be between 8 and 48, got: 70`),
+				ExpectError: regexp.MustCompile(`Attribute slo_id string length must be between 8 and 36, got: 70`),
 			},
 			{
 				ProtoV6ProviderFactories: acctest.Providers,
@@ -594,25 +637,110 @@ func TestAccResourceSloValidation(t *testing.T) {
 				},
 				ExpectError: regexp.MustCompile(regexp.QuoteMeta(`Attribute slo_id must contain only letters, numbers, hyphens, and`) + "\\s+" + regexp.QuoteMeta(`underscores, got: invalid@id$`)),
 			},
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("kql_good_and_good_kql"),
+				ConfigVariables: config.Variables{
+					"name": config.StringVariable("kql-dup"),
+				},
+				// Fires on either the string or object arm of the KQL exclusive pair.
+				ExpectError: regexp.MustCompile(`(?s)Invalid Attribute Combination.*good`),
+			},
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("time_window_invalid_type"),
+				ConfigVariables: config.Variables{
+					"name": config.StringVariable("tw-invalid"),
+				},
+				ExpectError: regexp.MustCompile(`(?s)time_window\[[0-9]\]\.type.*not_a_valid_type`),
+			},
 		},
 	})
 }
 
-func TestAccResourceSlo_kql_custom_indicator_basic(t *testing.T) {
+// TestAccResourceSlo_kql_object_form_and_settings_enabled exercises:
+//   - plan-only: object-form filter_kql / good_kql and settings.sync_field parse (no Kibana create);
+//   - apply (>=8.18 only): string-form KQL with sync_field and toggling `enabled` (Kibana accepts
+//     body.settings.syncField from 8.18+; older stacks 400 on apply).
+//
+// The apply path uses string KQL, not a full create with object-form *_kql only: some Kibana/Stack
+// versions respond with HTTP 400 for object-only indicator payloads (e.g. expecting a string
+// for /indicator/good). Plan-only still validates that *_kql attributes parse and plan. Full
+// object-form create+read is covered by unit tests in this package.
+func TestAccResourceSlo_kql_object_form_and_settings_enabled(t *testing.T) {
 	sloName := sdkacctest.RandStringFromCharSet(22, sdkacctest.CharSetAlphaNum)
+	skipKqlSLOStack := versionutils.CheckIfVersionMeetsConstraints(slo.SLOKqlAccTestConstraints)
 	resource.Test(t, resource.TestCase{
 		PreCheck:     func() { acctest.PreCheck(t) },
 		CheckDestroy: checkResourceSloDestroy,
 		Steps: []resource.TestStep{
 			{
 				ProtoV6ProviderFactories: acctest.Providers,
-				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(sloTimesliceMetricsMinVersion),
+				SkipFunc:                 skipKqlSLOStack,
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("kql_object_form_planonly"),
+				ConfigVariables: config.Variables{
+					"name": config.StringVariable(sloName),
+				},
+				PlanOnly:           true,
+				ExpectNonEmptyPlan: true,
+			},
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				SkipFunc:                 skipKqlSLOOrSettingsSyncFieldUnsupported,
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("settings_sync_string_kql"),
+				ConfigVariables: config.Variables{
+					"name":    config.StringVariable(sloName),
+					"enabled": config.BoolVariable(false),
+				},
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "kql_custom_indicator.0.index", "my-index-"+sloName),
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "kql_custom_indicator.0.filter", "service.name: test"),
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "kql_custom_indicator.0.good", "latency < 300"),
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "settings.sync_field", "@timestamp"),
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "enabled", "false"),
+					checkSloAPIEnabled(false),
+				),
+			},
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				SkipFunc:                 skipKqlSLOOrSettingsSyncFieldUnsupported,
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("settings_sync_string_kql"),
+				ConfigVariables: config.Variables{
+					"name":    config.StringVariable(sloName),
+					"enabled": config.BoolVariable(true),
+				},
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "enabled", "true"),
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "settings.sync_field", "@timestamp"),
+					checkSloAPIEnabled(true),
+				),
+			},
+		},
+	})
+}
+
+// TestAccResourceSlo_kql_custom_indicator_basic uses string KQL only (no timeslice indicator).
+// Step 1 skips with SLOKqlAccTestConstraints (8.9+, excluding 8.11.x). Step 2 (Fleet-style config
+// with group_by) requires SLOKqlFleetAccTestConstraints (8.10+, same 8.11 exclusions), not 8.12
+// timeslice.
+func TestAccResourceSlo_kql_custom_indicator_basic(t *testing.T) {
+	sloName := sdkacctest.RandStringFromCharSet(22, sdkacctest.CharSetAlphaNum)
+	skipKqlSLO := versionutils.CheckIfVersionMeetsConstraints(slo.SLOKqlAccTestConstraints)
+	skipKqlSLOFleetStep := versionutils.CheckIfVersionMeetsConstraints(slo.SLOKqlFleetAccTestConstraints)
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { acctest.PreCheck(t) },
+		CheckDestroy: checkResourceSloDestroy,
+		Steps: []resource.TestStep{
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				SkipFunc:                 skipKqlSLO,
 				ConfigDirectory:          acctest.NamedTestCaseDirectory("test"),
 				ConfigVariables: config.Variables{
 					"name": config.StringVariable(sloName),
 				},
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "kql_custom_indicator.0.index", "my-index-"+sloName),
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "kql_custom_indicator.0.filter", "*"),
 					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "kql_custom_indicator.0.good", "latency < 300"),
 					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "kql_custom_indicator.0.total", "*"),
 					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "kql_custom_indicator.0.timestamp_field", "custom_timestamp"),
@@ -620,7 +748,7 @@ func TestAccResourceSlo_kql_custom_indicator_basic(t *testing.T) {
 			},
 			{
 				ProtoV6ProviderFactories: acctest.Providers,
-				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(sloTimesliceMetricsMinVersion),
+				SkipFunc:                 skipKqlSLOFleetStep,
 				ConfigDirectory:          acctest.NamedTestCaseDirectory("fleetctl_test"),
 				ConfigVariables: config.Variables{
 					"name": config.StringVariable(sloName),
@@ -682,7 +810,7 @@ func TestAccResourceSloFromSDK(t *testing.T) {
 				// Verify the current (Framework) implementation can read and manage the SDK-created state.
 				ProtoV6ProviderFactories: acctest.Providers,
 				SkipFunc:                 versionutils.CheckIfVersionMeetsConstraints(sloConstraints),
-				Config:                   sloFromSDKCreateConfig,
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("create"),
 				ConfigVariables: config.Variables{
 					"name": config.StringVariable(sloName),
 				},
@@ -750,28 +878,107 @@ func TestAccResourceSloRangeFromZero(t *testing.T) {
 	})
 }
 
-func checkResourceSloDestroy(s *terraform.State) error {
-	client, err := clients.NewAcceptanceTestingClient()
-	if err != nil {
-		return err
-	}
-
-	for _, rs := range s.RootModule().Resources {
-		if rs.Type != "elasticstack_kibana_slo" {
-			continue
-		}
-		compID, _ := clients.CompositeIDFromStr(rs.Primary.ID)
-
-		slo, diags := kibana.GetSlo(context.Background(), client, compID.ResourceID, compID.ClusterID)
-		if diags.HasError() {
-			if len(diags) > 1 || diags[0].Summary != "404 Not Found" {
-				return fmt.Errorf("Failed to check if SLO was destroyed: %v", diags)
-			}
-		}
-
-		if slo != nil {
-			return fmt.Errorf("SLO (%s) still exists", compID.ResourceID)
-		}
-	}
-	return nil
+// TestAccResourceSloFloatPrecision verifies that objective fields (target,
+// timeslice_target) round-trip through the provider without precision loss.
+// Prior to the fix in https://github.com/elastic/terraform-provider-elasticstack/issues/2396,
+// the generated client used float32 for these fields. Values like 0.999 are not
+// exactly representable in float32, so reading them back produced different bits
+// (e.g. float64(float32(0.999)) = 0.9990000128746033), causing a "provider
+// produced inconsistent result after apply" error.
+func TestAccResourceSloFloatPrecision(t *testing.T) {
+	sloName := sdkacctest.RandStringFromCharSet(22, sdkacctest.CharSetAlphaNum)
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { acctest.PreCheck(t) },
+		CheckDestroy: checkResourceSloDestroy,
+		Steps: []resource.TestStep{
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(sloTimesliceMetricsMinVersion),
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("test"),
+				ConfigVariables: config.Variables{
+					"name": config.StringVariable(sloName),
+				},
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "objective.0.target", "0.999"),
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "objective.0.timeslice_target", "0.95"),
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "objective.0.timeslice_window", "5m"),
+				),
+			},
+		},
+	})
 }
+
+// TestAccResourceSloHistogramFloatPrecision verifies that histogram_custom_indicator
+// range fields (from, to) round-trip without precision loss.
+// See https://github.com/elastic/terraform-provider-elasticstack/issues/2400:
+// float64(float32(0.001)) = 0.0010000000474974513, causing a "provider produced
+// inconsistent result after apply" error when those fields were float32 in the client.
+func TestAccResourceSloHistogramFloatPrecision(t *testing.T) {
+	sloName := sdkacctest.RandStringFromCharSet(22, sdkacctest.CharSetAlphaNum)
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { acctest.PreCheck(t) },
+		CheckDestroy: checkResourceSloDestroy,
+		Steps: []resource.TestStep{
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(sloTimesliceMetricsMinVersion),
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("test"),
+				ConfigVariables: config.Variables{
+					"name": config.StringVariable(sloName),
+				},
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "histogram_custom_indicator.0.good.0.from", "0.001"),
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "histogram_custom_indicator.0.good.0.to", "1"),
+					resource.TestCheckResourceAttr("elasticstack_kibana_slo.test_slo", "objective.0.target", "0.999"),
+				),
+			},
+		},
+	})
+}
+
+// checkSloAPIEnabled asserts the SLO get API reports the same enabled flag as Terraform state
+// (after the provider's enable/disable reconciliation).
+func checkSloAPIEnabled(want bool) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources["elasticstack_kibana_slo.test_slo"]
+		if !ok {
+			return fmt.Errorf("resource elasticstack_kibana_slo.test_slo not found in state")
+		}
+		compID, diags := clients.CompositeIDFromStr(rs.Primary.ID)
+		if diags.HasError() {
+			return fmt.Errorf("parse composite id: %v", diags)
+		}
+		client, err := clients.NewAcceptanceTestingKibanaScopedClient()
+		if err != nil {
+			return err
+		}
+		oapi, err := client.GetKibanaOapiClient()
+		if err != nil {
+			return err
+		}
+		apiSlo, getDiags := kibanaoapi.GetSlo(context.Background(), oapi, compID.ClusterID, compID.ResourceID)
+		if getDiags.HasError() {
+			return fmt.Errorf("get SLO: %v", getDiags)
+		}
+		if apiSlo == nil {
+			return fmt.Errorf("SLO %q not found in Kibana for API enabled check", compID.ResourceID)
+		}
+		if apiSlo.Enabled != want {
+			return fmt.Errorf("Kibana GetSLO enabled=%v, want %v (space=%q, sloId=%q)", apiSlo.Enabled, want, compID.ClusterID, compID.ResourceID)
+		}
+		return nil
+	}
+}
+
+// checkResourceSloDestroy verifies all SLO resources have been destroyed.
+// The composite ID stores spaceID as ClusterID and sloID as ResourceID.
+var checkResourceSloDestroy = checks.KibanaResourceDestroyCheckCompositeID(
+	"elasticstack_kibana_slo",
+	func(ctx context.Context, client *kibanaoapi.Client, spaceID, sloID string) (bool, error) {
+		res, diags := kibanaoapi.GetSlo(ctx, client, spaceID, sloID)
+		if diags.HasError() {
+			return false, fmt.Errorf("failed to check if SLO was destroyed: %v", diags)
+		}
+		return res != nil, nil
+	},
+)

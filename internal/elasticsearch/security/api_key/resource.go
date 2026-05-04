@@ -21,17 +21,19 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
 	"github.com/elastic/terraform-provider-elasticstack/internal/diagutil"
+	"github.com/elastic/terraform-provider-elasticstack/internal/entitycore"
 	"github.com/hashicorp/go-version"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 )
 
 // Ensure provider defined types fully satisfy framework interfaces
-var _ resource.Resource = &Resource{}
-var _ resource.ResourceWithConfigure = &Resource{}
-var _ resource.ResourceWithUpgradeState = &Resource{}
+var (
+	_ resource.Resource                 = newResource()
+	_ resource.ResourceWithConfigure    = newResource()
+	_ resource.ResourceWithUpgradeState = newResource()
+)
 
 var (
 	MinVersion                         = version.Must(version.NewVersion("8.0.0")) // Enabled in 8.0
@@ -42,20 +44,17 @@ var (
 )
 
 type Resource struct {
-	client *clients.APIClient
+	*entitycore.ResourceBase
 }
 
-var configuredResources = []*Resource{}
-
-func (r *Resource) Configure(_ context.Context, request resource.ConfigureRequest, response *resource.ConfigureResponse) {
-	client, diags := clients.ConvertProviderData(request.ProviderData)
-	response.Diagnostics.Append(diags...)
-	r.client = client
-	configuredResources = append(configuredResources, r)
+func newResource() *Resource {
+	return &Resource{
+		ResourceBase: entitycore.NewResourceBase(entitycore.ComponentElasticsearch, "security_api_key"),
+	}
 }
 
-func (r *Resource) Metadata(_ context.Context, request resource.MetadataRequest, response *resource.MetadataResponse) {
-	response.TypeName = request.ProviderTypeName + "_elasticsearch_security_api_key"
+func NewResource() resource.Resource {
+	return newResource()
 }
 
 // Equivalent to privatestate.ProviderData
@@ -91,9 +90,14 @@ type clusterVersionPrivateData struct {
 	Version string
 }
 
-func (r *Resource) saveClusterVersion(ctx context.Context, client *clients.APIClient, priv privateData) diag.Diagnostics {
+func (r *Resource) saveClusterVersion(ctx context.Context, model tfModel, priv privateData) diag.Diagnostics {
+	client, diags := r.Client().GetElasticsearchClient(ctx, model.ElasticsearchConnection)
+	if diags.HasError() {
+		return diags
+	}
+
 	version, sdkDiags := client.ServerVersion(ctx)
-	diags := diagutil.FrameworkDiagsFromSDK(sdkDiags)
+	diags.Append(diagutil.FrameworkDiagsFromSDK(sdkDiags)...)
 	if diags.HasError() {
 		return diags
 	}

@@ -20,7 +20,7 @@ package slo
 import (
 	"testing"
 
-	generatedslo "github.com/elastic/terraform-provider-elasticstack/generated/slo"
+	"github.com/elastic/terraform-provider-elasticstack/generated/kbapi"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -71,7 +71,7 @@ func TestMetricCustomIndicator_ToAPI(t *testing.T) {
 					Name:        types.StringValue("c"),
 					Aggregation: types.StringValue("sum"),
 					Field:       types.StringValue("total"),
-					Filter:      types.StringValue("status:200"),
+					Filter:      types.StringValue(testTimesliceSumFilter),
 				}},
 			}},
 		}}}
@@ -79,52 +79,174 @@ func TestMetricCustomIndicator_ToAPI(t *testing.T) {
 		ok, ind, diags := m.metricCustomIndicatorToAPI()
 		require.True(t, ok)
 		require.False(t, diags.HasError())
-		require.NotNil(t, ind.IndicatorPropertiesCustomMetric)
 
-		params := ind.IndicatorPropertiesCustomMetric.Params
+		apiInd, err := ind.AsSLOsIndicatorPropertiesCustomMetric()
+		require.NoError(t, err)
+
+		params := apiInd.Params
 		require.NotNil(t, params.DataViewId)
 		assert.Equal(t, "dv-1", *params.DataViewId)
 		require.NotNil(t, params.Filter)
 		assert.Equal(t, "labels.env:prod", *params.Filter)
 
 		require.Len(t, params.Good.Metrics, 1)
-		assert.Equal(t, "a", params.Good.Metrics[0].Name)
-		assert.Nil(t, params.Good.Metrics[0].Filter)
+		goodMetric, err := params.Good.Metrics[0].AsSLOsIndicatorPropertiesCustomMetricParamsGoodMetrics0()
+		require.NoError(t, err)
+		assert.Equal(t, "a", goodMetric.Name)
+		assert.Nil(t, goodMetric.Filter)
 		assert.Equal(t, "a / b", params.Good.Equation)
 
 		require.Len(t, params.Total.Metrics, 1)
-		assert.Equal(t, "c", params.Total.Metrics[0].Name)
-		require.NotNil(t, params.Total.Metrics[0].Filter)
-		assert.Equal(t, "status:200", *params.Total.Metrics[0].Filter)
+		totalMetric, err := params.Total.Metrics[0].AsSLOsIndicatorPropertiesCustomMetricParamsTotalMetrics0()
+		require.NoError(t, err)
+		assert.Equal(t, "c", totalMetric.Name)
+		require.NotNil(t, totalMetric.Filter)
+		assert.Equal(t, testTimesliceSumFilter, *totalMetric.Filter)
 		assert.Equal(t, "c", params.Total.Equation)
+	})
+
+	t.Run("uses Metrics1 for doc_count aggregation", func(t *testing.T) {
+		goodFilter := testTimesliceSumFilter
+		m := tfModel{MetricCustomIndicator: []tfMetricCustomIndicator{{
+			Index:          types.StringValue("metrics-*"),
+			DataViewID:     types.StringNull(),
+			Filter:         types.StringNull(),
+			TimestampField: types.StringValue("@timestamp"),
+			Good: []tfMetricCustomEquation{{
+				Equation: types.StringValue("A"),
+				Metrics: []tfMetricCustomMetric{{
+					Name:        types.StringValue("A"),
+					Aggregation: types.StringValue("doc_count"),
+					Field:       types.StringNull(),
+					Filter:      types.StringValue(goodFilter),
+				}},
+			}},
+			Total: []tfMetricCustomEquation{{
+				Equation: types.StringValue("B"),
+				Metrics: []tfMetricCustomMetric{{
+					Name:        types.StringValue("B"),
+					Aggregation: types.StringValue("doc_count"),
+					Field:       types.StringNull(),
+					Filter:      types.StringNull(),
+				}},
+			}},
+		}}}
+
+		ok, ind, diags := m.metricCustomIndicatorToAPI()
+		require.True(t, ok)
+		require.False(t, diags.HasError())
+
+		apiInd, err := ind.AsSLOsIndicatorPropertiesCustomMetric()
+		require.NoError(t, err)
+
+		params := apiInd.Params
+
+		require.Len(t, params.Good.Metrics, 1)
+		goodMetric, err := params.Good.Metrics[0].AsSLOsIndicatorPropertiesCustomMetricParamsGoodMetrics1()
+		require.NoError(t, err)
+		assert.Equal(t, "A", goodMetric.Name)
+		assert.Equal(t, kbapi.SLOsIndicatorPropertiesCustomMetricParamsGoodMetrics1AggregationDocCount, goodMetric.Aggregation)
+		require.NotNil(t, goodMetric.Filter)
+		assert.Equal(t, goodFilter, *goodMetric.Filter)
+
+		require.Len(t, params.Total.Metrics, 1)
+		totalMetric, err := params.Total.Metrics[0].AsSLOsIndicatorPropertiesCustomMetricParamsTotalMetrics1()
+		require.NoError(t, err)
+		assert.Equal(t, "B", totalMetric.Name)
+		assert.Equal(t, kbapi.SLOsIndicatorPropertiesCustomMetricParamsTotalMetrics1AggregationDocCount, totalMetric.Aggregation)
+		assert.Nil(t, totalMetric.Filter)
 	})
 }
 
 func TestMetricCustomIndicator_PopulateFromAPI(t *testing.T) {
+	buildGoodItem := func(t *testing.T, name, agg, field string, filter *string) kbapi.SLOsIndicatorPropertiesCustomMetric_Params_Good_Metrics_Item {
+		t.Helper()
+		var item kbapi.SLOsIndicatorPropertiesCustomMetric_Params_Good_Metrics_Item
+		m0 := kbapi.SLOsIndicatorPropertiesCustomMetricParamsGoodMetrics0{
+			Name:        name,
+			Aggregation: kbapi.SLOsIndicatorPropertiesCustomMetricParamsGoodMetrics0Aggregation(agg),
+			Field:       field,
+			Filter:      filter,
+		}
+		require.NoError(t, item.FromSLOsIndicatorPropertiesCustomMetricParamsGoodMetrics0(m0))
+		return item
+	}
+	buildTotalItemFn := func(t *testing.T, name, agg, field string, filter *string) kbapi.SLOsIndicatorPropertiesCustomMetric_Params_Total_Metrics_Item {
+		t.Helper()
+		var item kbapi.SLOsIndicatorPropertiesCustomMetric_Params_Total_Metrics_Item
+		m0 := kbapi.SLOsIndicatorPropertiesCustomMetricParamsTotalMetrics0{
+			Name:        name,
+			Aggregation: kbapi.SLOsIndicatorPropertiesCustomMetricParamsTotalMetrics0Aggregation(agg),
+			Field:       field,
+			Filter:      filter,
+		}
+		require.NoError(t, item.FromSLOsIndicatorPropertiesCustomMetricParamsTotalMetrics0(m0))
+		return item
+	}
+	buildGoodItemDocCount := func(t *testing.T, name string, filter *string) kbapi.SLOsIndicatorPropertiesCustomMetric_Params_Good_Metrics_Item {
+		t.Helper()
+		var item kbapi.SLOsIndicatorPropertiesCustomMetric_Params_Good_Metrics_Item
+		m1 := kbapi.SLOsIndicatorPropertiesCustomMetricParamsGoodMetrics1{
+			Name:        name,
+			Aggregation: kbapi.SLOsIndicatorPropertiesCustomMetricParamsGoodMetrics1AggregationDocCount,
+			Filter:      filter,
+		}
+		require.NoError(t, item.FromSLOsIndicatorPropertiesCustomMetricParamsGoodMetrics1(m1))
+		return item
+	}
+	buildTotalItemDocCount := func(t *testing.T, name string, filter *string) kbapi.SLOsIndicatorPropertiesCustomMetric_Params_Total_Metrics_Item {
+		t.Helper()
+		var item kbapi.SLOsIndicatorPropertiesCustomMetric_Params_Total_Metrics_Item
+		m1 := kbapi.SLOsIndicatorPropertiesCustomMetricParamsTotalMetrics1{
+			Name:        name,
+			Aggregation: kbapi.SLOsIndicatorPropertiesCustomMetricParamsTotalMetrics1AggregationDocCount,
+			Filter:      filter,
+		}
+		require.NoError(t, item.FromSLOsIndicatorPropertiesCustomMetricParamsTotalMetrics1(m1))
+		return item
+	}
+
 	t.Run("maps equations, metrics and optional pointers", func(t *testing.T) {
-		api := &generatedslo.IndicatorPropertiesCustomMetric{
-			Params: generatedslo.IndicatorPropertiesCustomMetricParams{
+		dvID := "dv-1"
+		overallFilter := "labels.env:prod"
+		totalFilter := testTimesliceSumFilter
+
+		api := kbapi.SLOsIndicatorPropertiesCustomMetric{
+			Params: struct {
+				DataViewId *string `json:"dataViewId,omitempty"` //nolint:revive // var-naming: API struct field
+				Filter     *string `json:"filter,omitempty"`
+				Good       struct {
+					Equation string                                                               `json:"equation"`
+					Metrics  []kbapi.SLOsIndicatorPropertiesCustomMetric_Params_Good_Metrics_Item `json:"metrics"`
+				} `json:"good"`
+				Index          string `json:"index"`
+				TimestampField string `json:"timestampField"`
+				Total          struct {
+					Equation string                                                                `json:"equation"`
+					Metrics  []kbapi.SLOsIndicatorPropertiesCustomMetric_Params_Total_Metrics_Item `json:"metrics"`
+				} `json:"total"`
+			}{
 				Index:          "metrics-*",
-				DataViewId:     new("dv-1"),
-				Filter:         new("labels.env:prod"),
+				DataViewId:     &dvID,
+				Filter:         &overallFilter,
 				TimestampField: "@timestamp",
-				Good: generatedslo.IndicatorPropertiesCustomMetricParamsGood{
+				Good: struct {
+					Equation string                                                               `json:"equation"`
+					Metrics  []kbapi.SLOsIndicatorPropertiesCustomMetric_Params_Good_Metrics_Item `json:"metrics"`
+				}{
 					Equation: "a / b",
-					Metrics: []generatedslo.IndicatorPropertiesCustomMetricParamsGoodMetricsInner{{
-						Name:        "a",
-						Aggregation: "sum",
-						Field:       "good",
-						Filter:      nil,
-					}},
+					Metrics: []kbapi.SLOsIndicatorPropertiesCustomMetric_Params_Good_Metrics_Item{
+						buildGoodItem(t, "a", "sum", "good", nil),
+					},
 				},
-				Total: generatedslo.IndicatorPropertiesCustomMetricParamsTotal{
+				Total: struct {
+					Equation string                                                                `json:"equation"`
+					Metrics  []kbapi.SLOsIndicatorPropertiesCustomMetric_Params_Total_Metrics_Item `json:"metrics"`
+				}{
 					Equation: "c",
-					Metrics: []generatedslo.IndicatorPropertiesCustomMetricParamsGoodMetricsInner{{
-						Name:        "c",
-						Aggregation: "sum",
-						Field:       "total",
-						Filter:      new("status:200"),
-					}},
+					Metrics: []kbapi.SLOsIndicatorPropertiesCustomMetric_Params_Total_Metrics_Item{
+						buildTotalItemFn(t, "c", "sum", "total", &totalFilter),
+					},
 				},
 			},
 		}
@@ -148,23 +270,42 @@ func TestMetricCustomIndicator_PopulateFromAPI(t *testing.T) {
 		require.Len(t, ind.Total, 1)
 		require.Len(t, ind.Total[0].Metrics, 1)
 		assert.Equal(t, "c", ind.Total[0].Equation.ValueString())
-		assert.Equal(t, "status:200", ind.Total[0].Metrics[0].Filter.ValueString())
+		assert.Equal(t, testTimesliceSumFilter, ind.Total[0].Metrics[0].Filter.ValueString())
 	})
 
 	t.Run("sets optional fields to null when not present", func(t *testing.T) {
-		api := &generatedslo.IndicatorPropertiesCustomMetric{
-			Params: generatedslo.IndicatorPropertiesCustomMetricParams{
+		api := kbapi.SLOsIndicatorPropertiesCustomMetric{
+			Params: struct {
+				DataViewId *string `json:"dataViewId,omitempty"` //nolint:revive // var-naming: API struct field
+				Filter     *string `json:"filter,omitempty"`
+				Good       struct {
+					Equation string                                                               `json:"equation"`
+					Metrics  []kbapi.SLOsIndicatorPropertiesCustomMetric_Params_Good_Metrics_Item `json:"metrics"`
+				} `json:"good"`
+				Index          string `json:"index"`
+				TimestampField string `json:"timestampField"`
+				Total          struct {
+					Equation string                                                                `json:"equation"`
+					Metrics  []kbapi.SLOsIndicatorPropertiesCustomMetric_Params_Total_Metrics_Item `json:"metrics"`
+				} `json:"total"`
+			}{
 				Index:          "metrics-*",
 				DataViewId:     nil,
 				Filter:         nil,
 				TimestampField: "@timestamp",
-				Good: generatedslo.IndicatorPropertiesCustomMetricParamsGood{
+				Good: struct {
+					Equation string                                                               `json:"equation"`
+					Metrics  []kbapi.SLOsIndicatorPropertiesCustomMetric_Params_Good_Metrics_Item `json:"metrics"`
+				}{
 					Equation: "a",
-					Metrics:  []generatedslo.IndicatorPropertiesCustomMetricParamsGoodMetricsInner{},
+					Metrics:  []kbapi.SLOsIndicatorPropertiesCustomMetric_Params_Good_Metrics_Item{},
 				},
-				Total: generatedslo.IndicatorPropertiesCustomMetricParamsTotal{
+				Total: struct {
+					Equation string                                                                `json:"equation"`
+					Metrics  []kbapi.SLOsIndicatorPropertiesCustomMetric_Params_Total_Metrics_Item `json:"metrics"`
+				}{
 					Equation: "b",
-					Metrics:  []generatedslo.IndicatorPropertiesCustomMetricParamsGoodMetricsInner{},
+					Metrics:  []kbapi.SLOsIndicatorPropertiesCustomMetric_Params_Total_Metrics_Item{},
 				},
 			},
 		}
@@ -179,10 +320,67 @@ func TestMetricCustomIndicator_PopulateFromAPI(t *testing.T) {
 		assert.True(t, ind.Filter.IsNull())
 	})
 
-	t.Run("returns empty diagnostics when api is nil", func(t *testing.T) {
+	t.Run("maps doc_count metrics without field", func(t *testing.T) {
+		goodFilter := testTimesliceSumFilter
+
+		api := kbapi.SLOsIndicatorPropertiesCustomMetric{
+			Params: struct {
+				DataViewId *string `json:"dataViewId,omitempty"` //nolint:revive // var-naming: API struct field
+				Filter     *string `json:"filter,omitempty"`
+				Good       struct {
+					Equation string                                                               `json:"equation"`
+					Metrics  []kbapi.SLOsIndicatorPropertiesCustomMetric_Params_Good_Metrics_Item `json:"metrics"`
+				} `json:"good"`
+				Index          string `json:"index"`
+				TimestampField string `json:"timestampField"`
+				Total          struct {
+					Equation string                                                                `json:"equation"`
+					Metrics  []kbapi.SLOsIndicatorPropertiesCustomMetric_Params_Total_Metrics_Item `json:"metrics"`
+				} `json:"total"`
+			}{
+				Index:          "metrics-*",
+				TimestampField: "@timestamp",
+				Good: struct {
+					Equation string                                                               `json:"equation"`
+					Metrics  []kbapi.SLOsIndicatorPropertiesCustomMetric_Params_Good_Metrics_Item `json:"metrics"`
+				}{
+					Equation: "A",
+					Metrics: []kbapi.SLOsIndicatorPropertiesCustomMetric_Params_Good_Metrics_Item{
+						buildGoodItemDocCount(t, "A", &goodFilter),
+					},
+				},
+				Total: struct {
+					Equation string                                                                `json:"equation"`
+					Metrics  []kbapi.SLOsIndicatorPropertiesCustomMetric_Params_Total_Metrics_Item `json:"metrics"`
+				}{
+					Equation: "B",
+					Metrics: []kbapi.SLOsIndicatorPropertiesCustomMetric_Params_Total_Metrics_Item{
+						buildTotalItemDocCount(t, "B", nil),
+					},
+				},
+			},
+		}
+
 		var m tfModel
-		diags := m.populateFromMetricCustomIndicator(nil)
+		diags := m.populateFromMetricCustomIndicator(api)
 		require.False(t, diags.HasError())
-		assert.Nil(t, m.MetricCustomIndicator)
+		require.Len(t, m.MetricCustomIndicator, 1)
+
+		ind := m.MetricCustomIndicator[0]
+		require.Len(t, ind.Good, 1)
+		require.Len(t, ind.Good[0].Metrics, 1)
+		goodMetric := ind.Good[0].Metrics[0]
+		assert.Equal(t, "A", goodMetric.Name.ValueString())
+		assert.Equal(t, "doc_count", goodMetric.Aggregation.ValueString())
+		assert.True(t, goodMetric.Field.IsNull())
+		assert.Equal(t, goodFilter, goodMetric.Filter.ValueString())
+
+		require.Len(t, ind.Total, 1)
+		require.Len(t, ind.Total[0].Metrics, 1)
+		totalMetric := ind.Total[0].Metrics[0]
+		assert.Equal(t, "B", totalMetric.Name.ValueString())
+		assert.Equal(t, "doc_count", totalMetric.Aggregation.ValueString())
+		assert.True(t, totalMetric.Field.IsNull())
+		assert.True(t, totalMetric.Filter.IsNull())
 	})
 }

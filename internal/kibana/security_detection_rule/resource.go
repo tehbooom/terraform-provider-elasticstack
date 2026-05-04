@@ -20,31 +20,30 @@ package securitydetectionrule
 import (
 	"context"
 
-	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
+	"github.com/elastic/terraform-provider-elasticstack/internal/entitycore"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 )
 
-var _ resource.Resource = &securityDetectionRuleResource{}
-var _ resource.ResourceWithConfigure = &securityDetectionRuleResource{}
-var _ resource.ResourceWithImportState = &securityDetectionRuleResource{}
-
-func NewSecurityDetectionRuleResource() resource.Resource {
-	return &securityDetectionRuleResource{}
-}
+var (
+	_ resource.Resource                 = newSecurityDetectionRuleResource()
+	_ resource.ResourceWithConfigure    = newSecurityDetectionRuleResource()
+	_ resource.ResourceWithImportState  = newSecurityDetectionRuleResource()
+	_ resource.ResourceWithUpgradeState = newSecurityDetectionRuleResource()
+)
 
 type securityDetectionRuleResource struct {
-	client *clients.APIClient
+	*entitycore.ResourceBase
 }
 
-func (r *securityDetectionRuleResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
-	resp.TypeName = req.ProviderTypeName + "_kibana_security_detection_rule"
+func newSecurityDetectionRuleResource() *securityDetectionRuleResource {
+	return &securityDetectionRuleResource{
+		ResourceBase: entitycore.NewResourceBase(entitycore.ComponentKibana, "security_detection_rule"),
+	}
 }
 
-func (r *securityDetectionRuleResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	client, diags := clients.ConvertProviderData(req.ProviderData)
-	resp.Diagnostics.Append(diags...)
-	r.client = client
+func NewSecurityDetectionRuleResource() resource.Resource {
+	return newSecurityDetectionRuleResource()
 }
 
 func (r *securityDetectionRuleResource) ImportState(ctx context.Context, request resource.ImportStateRequest, response *resource.ImportStateResponse) {

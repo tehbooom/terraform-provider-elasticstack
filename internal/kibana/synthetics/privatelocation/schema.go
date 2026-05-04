@@ -19,12 +19,11 @@ package privatelocation
 
 import (
 	_ "embed"
-	"strings"
 
-	"github.com/disaster37/go-kibana-rest/v8/kbapi"
+	"github.com/elastic/terraform-provider-elasticstack/generated/kbapi"
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
 	"github.com/elastic/terraform-provider-elasticstack/internal/kibana/synthetics"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
+	providerschema "github.com/elastic/terraform-provider-elasticstack/internal/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
@@ -33,11 +32,13 @@ import (
 )
 
 type tfModelV0 struct {
-	ID            types.String   `tfsdk:"id"`
-	Label         types.String   `tfsdk:"label"`
-	AgentPolicyID types.String   `tfsdk:"agent_policy_id"`
-	Tags          []types.String `tfsdk:"tags"` // > string
-	Geo           *tfGeoConfigV0 `tfsdk:"geo"`
+	ID               types.String   `tfsdk:"id"`
+	KibanaConnection types.List     `tfsdk:"kibana_connection"`
+	Label            types.String   `tfsdk:"label"`
+	AgentPolicyID    types.String   `tfsdk:"agent_policy_id"`
+	SpaceID          types.String   `tfsdk:"space_id"`
+	Tags             []types.String `tfsdk:"tags"` // > string
+	Geo              *tfGeoConfigV0 `tfsdk:"geo"`
 }
 
 func privateLocationSchema() schema.Schema {
@@ -70,6 +71,15 @@ func privateLocationSchema() schema.Schema {
 					stringplanmodifier.RequiresReplace(),
 				},
 			},
+			"space_id": schema.StringAttribute{
+				MarkdownDescription: spaceIDDescription,
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+					stringplanmodifier.RequiresReplace(),
+				},
+			},
 			"tags": schema.ListAttribute{
 				ElementType:         types.StringType,
 				Optional:            true,
@@ -81,40 +91,115 @@ func privateLocationSchema() schema.Schema {
 			},
 			"geo": geoConfigSchema(),
 		},
-	}
+
+		Blocks: map[string]schema.Block{
+			"kibana_connection": providerschema.GetKbFWConnectionBlock(),
+		}}
 }
 
-func (m *tfModelV0) toPrivateLocationConfig() kbapi.PrivateLocationConfig {
-	var geoConfig *kbapi.SyntheticGeoConfig
-	if m.Geo != nil {
-		geoConfig = m.Geo.toSyntheticGeoConfig()
-	}
-
-	return kbapi.PrivateLocationConfig{
+// privateLocationToCreateBody converts a Terraform model into a kbapi create request body.
+// Tags are passed as *[]string and geo coordinates preserve float64 precision.
+func privateLocationToCreateBody(m tfModelV0) kbapi.PostPrivateLocationJSONRequestBody {
+	body := kbapi.PostPrivateLocationJSONRequestBody{
 		Label:         m.Label.ValueString(),
 		AgentPolicyId: m.AgentPolicyID.ValueString(),
-		Tags:          synthetics.ValueStringSlice(m.Tags),
-		Geo:           geoConfig,
 	}
+
+	tags := synthetics.ValueStringSlice(m.Tags)
+	if len(tags) > 0 {
+		body.Tags = &tags
+	}
+
+	if m.Geo != nil {
+		body.Geo = &struct {
+			Lat float64 `json:"lat"`
+			Lon float64 `json:"lon"`
+		}{
+			Lat: m.Geo.Lat.ValueFloat64(),
+			Lon: m.Geo.Lon.ValueFloat64(),
+		}
+	}
+
+	return body
 }
 
-func tryReadCompositeID(id string) (*clients.CompositeID, diag.Diagnostics) {
-	if strings.Contains(id, "/") {
-		compositeID, diagnostics := synthetics.GetCompositeID(id)
-		return compositeID, diagnostics
+// privateLocationFromAPI maps a SyntheticsGetPrivateLocation API response onto a tfModelV0.
+// Tags are read from AdditionalProperties["tags"] when the field is not a first-class struct field.
+func privateLocationFromAPI(loc kbapi.SyntheticsGetPrivateLocation, spaceID string, kibanaConnection types.List) tfModelV0 {
+	id := ""
+	if loc.Id != nil {
+		id = *loc.Id
 	}
-	return nil, diag.Diagnostics{}
-}
 
-func toModelV0(pLoc kbapi.PrivateLocation) tfModelV0 {
+	label := ""
+	if loc.Label != nil {
+		label = *loc.Label
+	}
+
+	agentPolicyID := ""
+	if loc.AgentPolicyId != nil {
+		agentPolicyID = *loc.AgentPolicyId
+	}
+
+	// Tags are not a first-class field on SyntheticsGetPrivateLocation; they may land
+	// in AdditionalProperties when the generated model omits them.
+	tags := tagsFromAdditionalProperties(loc)
 
 	return tfModelV0{
-		ID:            types.StringValue(pLoc.Id),
-		Label:         types.StringValue(pLoc.Label),
-		AgentPolicyID: types.StringValue(pLoc.AgentPolicyId),
-		Tags:          synthetics.StringSliceValue(pLoc.Tags),
-		Geo:           fromSyntheticGeoConfig(pLoc.Geo),
+		ID:               types.StringValue(id),
+		Label:            types.StringValue(label),
+		AgentPolicyID:    types.StringValue(agentPolicyID),
+		SpaceID:          types.StringValue(spaceID),
+		Tags:             synthetics.StringSliceValue(tags),
+		Geo:              geoFromAPIResponse(loc.Geo),
+		KibanaConnection: kibanaConnection,
 	}
+}
+
+// tagsFromAdditionalProperties extracts the tags slice from the API response.
+// The generated OpenAPI struct does not have a first-class Tags field, so tags are
+// stored in AdditionalProperties["tags"] as []interface{}.
+func tagsFromAdditionalProperties(loc kbapi.SyntheticsGetPrivateLocation) []string {
+	val, found := loc.Get("tags")
+	if !found || val == nil {
+		return nil
+	}
+	rawSlice, ok := val.([]any)
+	if !ok {
+		return nil
+	}
+	tags := make([]string, 0, len(rawSlice))
+	for _, v := range rawSlice {
+		if s, ok := v.(string); ok {
+			tags = append(tags, s)
+		}
+	}
+	return tags
+}
+
+// geoFromAPIResponse converts the nested geo struct from the API response to a tfGeoConfigV0.
+func geoFromAPIResponse(geo *struct {
+	Lat float64 `json:"lat"`
+	Lon float64 `json:"lon"`
+}) *tfGeoConfigV0 {
+	if geo == nil {
+		return nil
+	}
+	return &tfGeoConfigV0{
+		Lat: NewFloat32PrecisionValue(float64(geo.Lat)),
+		Lon: NewFloat32PrecisionValue(float64(geo.Lon)),
+	}
+}
+
+// effectiveSpaceID returns the Kibana space for API calls. When the resource id
+// is a composite import id (<space_id>/<private_location_id>), the space
+// segment is used if space_id is not yet in state (for example right after import).
+func effectiveSpaceID(spaceID types.String, compositeID *clients.CompositeID) string {
+	s := spaceID.ValueString()
+	if compositeID != nil && (spaceID.IsNull() || spaceID.IsUnknown() || s == "") {
+		return compositeID.ClusterID
+	}
+	return s
 }
 
 //go:embed resource-description.md
@@ -122,6 +207,9 @@ var syntheticsPrivateLocationDescription string
 
 //go:embed agent_policy_id-description.md
 var agentPolicyIDDescription string
+
+//go:embed descriptions/space_id.md
+var spaceIDDescription string
 
 // Geographic configuration schema and types
 func geoConfigSchema() schema.Attribute {
@@ -132,11 +220,13 @@ func geoConfigSchema() schema.Attribute {
 			"lat": schema.Float64Attribute{
 				Optional:            false,
 				Required:            true,
+				CustomType:          Float32PrecisionType{},
 				MarkdownDescription: "The latitude of the location.",
 			},
 			"lon": schema.Float64Attribute{
 				Optional:            false,
 				Required:            true,
+				CustomType:          Float32PrecisionType{},
 				MarkdownDescription: "The longitude of the location.",
 			},
 		},
@@ -144,23 +234,6 @@ func geoConfigSchema() schema.Attribute {
 }
 
 type tfGeoConfigV0 struct {
-	Lat types.Float64 `tfsdk:"lat"`
-	Lon types.Float64 `tfsdk:"lon"`
-}
-
-func (m *tfGeoConfigV0) toSyntheticGeoConfig() *kbapi.SyntheticGeoConfig {
-	return &kbapi.SyntheticGeoConfig{
-		Lat: m.Lat.ValueFloat64(),
-		Lon: m.Lon.ValueFloat64(),
-	}
-}
-
-func fromSyntheticGeoConfig(v *kbapi.SyntheticGeoConfig) *tfGeoConfigV0 {
-	if v == nil {
-		return nil
-	}
-	return &tfGeoConfigV0{
-		Lat: types.Float64Value(v.Lat),
-		Lon: types.Float64Value(v.Lon),
-	}
+	Lat Float32PrecisionValue `tfsdk:"lat"`
+	Lon Float32PrecisionValue `tfsdk:"lon"`
 }

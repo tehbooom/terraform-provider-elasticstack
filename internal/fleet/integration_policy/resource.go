@@ -26,6 +26,8 @@ import (
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients/fleet"
 	"github.com/elastic/terraform-provider-elasticstack/internal/diagutil"
+	"github.com/elastic/terraform-provider-elasticstack/internal/entitycore"
+	fleetpkg "github.com/elastic/terraform-provider-elasticstack/internal/fleet"
 	"github.com/hashicorp/go-version"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -33,10 +35,10 @@ import (
 )
 
 var (
-	_ resource.Resource                 = &integrationPolicyResource{}
-	_ resource.ResourceWithConfigure    = &integrationPolicyResource{}
-	_ resource.ResourceWithImportState  = &integrationPolicyResource{}
-	_ resource.ResourceWithUpgradeState = &integrationPolicyResource{}
+	_ resource.Resource                 = newIntegrationPolicyResource()
+	_ resource.ResourceWithConfigure    = newIntegrationPolicyResource()
+	_ resource.ResourceWithImportState  = newIntegrationPolicyResource()
+	_ resource.ResourceWithUpgradeState = newIntegrationPolicyResource()
 )
 
 var (
@@ -44,27 +46,21 @@ var (
 	MinVersionOutputID  = version.Must(version.NewVersion("8.16.0"))
 )
 
+type integrationPolicyResource struct {
+	*entitycore.ResourceBase
+	*fleetpkg.SpaceImporter
+}
+
+func newIntegrationPolicyResource() *integrationPolicyResource {
+	return &integrationPolicyResource{
+		ResourceBase:  entitycore.NewResourceBase(entitycore.ComponentFleet, "integration_policy"),
+		SpaceImporter: fleetpkg.NewSpaceImporter(path.Root("policy_id")),
+	}
+}
+
 // NewResource is a helper function to simplify the provider implementation.
 func NewResource() resource.Resource {
-	return &integrationPolicyResource{}
-}
-
-type integrationPolicyResource struct {
-	client *clients.APIClient
-}
-
-func (r *integrationPolicyResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	client, diags := clients.ConvertProviderData(req.ProviderData)
-	resp.Diagnostics.Append(diags...)
-	r.client = client
-}
-
-func (r *integrationPolicyResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
-	resp.TypeName = fmt.Sprintf("%s_%s", req.ProviderTypeName, "fleet_integration_policy")
-}
-
-func (r *integrationPolicyResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	resource.ImportStatePassthroughID(ctx, path.Root("policy_id"), req, resp)
+	return newIntegrationPolicyResource()
 }
 
 func (r *integrationPolicyResource) UpgradeState(context.Context) map[int64]resource.StateUpgrader {
@@ -74,13 +70,13 @@ func (r *integrationPolicyResource) UpgradeState(context.Context) map[int64]reso
 	}
 }
 
-func (r *integrationPolicyResource) buildFeatures(ctx context.Context) (features, diag.Diagnostics) {
-	supportsPolicyIDs, diags := r.client.EnforceMinVersion(ctx, MinVersionPolicyIDs)
+func (r *integrationPolicyResource) buildFeatures(ctx context.Context, apiClient *clients.KibanaScopedClient) (features, diag.Diagnostics) {
+	supportsPolicyIDs, diags := apiClient.EnforceMinVersion(ctx, MinVersionPolicyIDs)
 	if diags.HasError() {
 		return features{}, diagutil.FrameworkDiagsFromSDK(diags)
 	}
 
-	supportsOutputID, outputIDDiags := r.client.EnforceMinVersion(ctx, MinVersionOutputID)
+	supportsOutputID, outputIDDiags := apiClient.EnforceMinVersion(ctx, MinVersionOutputID)
 	if outputIDDiags.HasError() {
 		return features{}, diagutil.FrameworkDiagsFromSDK(outputIDDiags)
 	}
@@ -93,11 +89,11 @@ func (r *integrationPolicyResource) buildFeatures(ctx context.Context) (features
 
 var knownPackages sync.Map
 
-func getPackageCacheKey(name string, version string) string {
+func getPackageCacheKey(name, version string) string {
 	return fmt.Sprintf("%s-%s", name, version)
 }
 
-func getPackageInfo(ctx context.Context, client *fleet.Client, name string, version string) (*kbapi.PackageInfo, diag.Diagnostics) {
+func getPackageInfo(ctx context.Context, client *fleet.Client, name, version, spaceID string) (*kbapi.PackageInfo, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
 	if pkg, ok := getCachedPackageInfo(name, version); ok {
@@ -106,7 +102,7 @@ func getPackageInfo(ctx context.Context, client *fleet.Client, name string, vers
 
 	// Try the exact version first; fall back to no version (returns the installed
 	// package) when the requested version has been removed from the registry.
-	pkg, diags := fleet.GetPackage(ctx, client, name, version)
+	pkg, diags := fleet.GetPackage(ctx, client, name, version, spaceID)
 	if diags.HasError() {
 		return nil, diags
 	}
@@ -118,7 +114,7 @@ func getPackageInfo(ctx context.Context, client *fleet.Client, name string, vers
 				"Consider updating integration_version to an available version.", name, version),
 		)
 		var fallbackDiags diag.Diagnostics
-		pkg, fallbackDiags = fleet.GetPackage(ctx, client, name, "")
+		pkg, fallbackDiags = fleet.GetPackage(ctx, client, name, "", spaceID)
 		diags.Append(fallbackDiags...)
 		if diags.HasError() {
 			return nil, diags
@@ -135,7 +131,7 @@ func getPackageInfo(ctx context.Context, client *fleet.Client, name string, vers
 	return pkg, diags
 }
 
-func getCachedPackageInfo(name string, version string) (kbapi.PackageInfo, bool) {
+func getCachedPackageInfo(name, version string) (kbapi.PackageInfo, bool) {
 	value, ok := knownPackages.Load(getPackageCacheKey(name, version))
 	if !ok {
 		return kbapi.PackageInfo{}, false

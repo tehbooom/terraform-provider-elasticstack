@@ -18,7 +18,7 @@
 package slo
 
 import (
-	"github.com/elastic/terraform-provider-elasticstack/generated/slo"
+	"github.com/elastic/terraform-provider-elasticstack/generated/kbapi"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
@@ -40,53 +40,83 @@ type tfHistogramRange struct {
 	To          types.Float64 `tfsdk:"to"`
 }
 
-func (m tfModel) histogramCustomIndicatorToAPI() (bool, slo.SloWithSummaryResponseIndicator, diag.Diagnostics) {
+func (m tfModel) histogramCustomIndicatorToAPI() (bool, kbapi.SLOsSloWithSummaryResponse_Indicator, diag.Diagnostics) {
 	var diags diag.Diagnostics
 	if len(m.HistogramCustomIndicator) != 1 {
-		return false, slo.SloWithSummaryResponseIndicator{}, diags
+		return false, kbapi.SLOsSloWithSummaryResponse_Indicator{}, diags
 	}
 
 	ind := m.HistogramCustomIndicator[0]
 	if len(ind.Good) != 1 || len(ind.Total) != 1 {
 		diags.AddError("Invalid configuration", "histogram_custom_indicator.good and .total must each have exactly 1 item")
-		return true, slo.SloWithSummaryResponseIndicator{}, diags
+		return true, kbapi.SLOsSloWithSummaryResponse_Indicator{}, diags
 	}
 
-	good := slo.IndicatorPropertiesHistogramParamsGood{
-		Field:       ind.Good[0].Field.ValueString(),
-		Aggregation: ind.Good[0].Aggregation.ValueString(),
-		Filter:      stringPtr(ind.Good[0].Filter),
-		From:        float64Ptr(ind.Good[0].From),
-		To:          float64Ptr(ind.Good[0].To),
-	}
-	total := slo.IndicatorPropertiesHistogramParamsTotal{
-		Field:       ind.Total[0].Field.ValueString(),
-		Aggregation: ind.Total[0].Aggregation.ValueString(),
-		Filter:      stringPtr(ind.Total[0].Filter),
-		From:        float64Ptr(ind.Total[0].From),
-		To:          float64Ptr(ind.Total[0].To),
-	}
-
-	return true, slo.SloWithSummaryResponseIndicator{
-		IndicatorPropertiesHistogram: &slo.IndicatorPropertiesHistogram{
-			Type: indicatorAddressToType["histogram_custom_indicator"],
-			Params: slo.IndicatorPropertiesHistogramParams{
-				Index:          ind.Index.ValueString(),
-				DataViewId:     stringPtr(ind.DataViewID),
-				Filter:         stringPtr(ind.Filter),
-				TimestampField: ind.TimestampField.ValueString(),
-				Good:           good,
-				Total:          total,
+	histIndicator := kbapi.SLOsIndicatorPropertiesHistogram{
+		Type: indicatorAddressToType["histogram_custom_indicator"],
+		Params: struct {
+			DataViewId *string `json:"dataViewId,omitempty"` //nolint:revive // var-naming: API struct field
+			Filter     *string `json:"filter,omitempty"`
+			Good       struct {
+				Aggregation kbapi.SLOsIndicatorPropertiesHistogramParamsGoodAggregation `json:"aggregation"`
+				Field       string                                                      `json:"field"`
+				Filter      *string                                                     `json:"filter,omitempty"`
+				From        *float64                                                    `json:"from,omitempty"`
+				To          *float64                                                    `json:"to,omitempty"`
+			} `json:"good"`
+			Index          string `json:"index"`
+			TimestampField string `json:"timestampField"`
+			Total          struct {
+				Aggregation kbapi.SLOsIndicatorPropertiesHistogramParamsTotalAggregation `json:"aggregation"`
+				Field       string                                                       `json:"field"`
+				Filter      *string                                                      `json:"filter,omitempty"`
+				From        *float64                                                     `json:"from,omitempty"`
+				To          *float64                                                     `json:"to,omitempty"`
+			} `json:"total"`
+		}{
+			Index:          ind.Index.ValueString(),
+			DataViewId:     stringPtr(ind.DataViewID),
+			Filter:         stringPtr(ind.Filter),
+			TimestampField: ind.TimestampField.ValueString(),
+			Good: struct {
+				Aggregation kbapi.SLOsIndicatorPropertiesHistogramParamsGoodAggregation `json:"aggregation"`
+				Field       string                                                      `json:"field"`
+				Filter      *string                                                     `json:"filter,omitempty"`
+				From        *float64                                                    `json:"from,omitempty"`
+				To          *float64                                                    `json:"to,omitempty"`
+			}{
+				Field:       ind.Good[0].Field.ValueString(),
+				Aggregation: kbapi.SLOsIndicatorPropertiesHistogramParamsGoodAggregation(ind.Good[0].Aggregation.ValueString()),
+				Filter:      stringPtr(ind.Good[0].Filter),
+				From:        float64Ptr(ind.Good[0].From),
+				To:          float64Ptr(ind.Good[0].To),
+			},
+			Total: struct {
+				Aggregation kbapi.SLOsIndicatorPropertiesHistogramParamsTotalAggregation `json:"aggregation"`
+				Field       string                                                       `json:"field"`
+				Filter      *string                                                      `json:"filter,omitempty"`
+				From        *float64                                                     `json:"from,omitempty"`
+				To          *float64                                                     `json:"to,omitempty"`
+			}{
+				Field:       ind.Total[0].Field.ValueString(),
+				Aggregation: kbapi.SLOsIndicatorPropertiesHistogramParamsTotalAggregation(ind.Total[0].Aggregation.ValueString()),
+				Filter:      stringPtr(ind.Total[0].Filter),
+				From:        float64Ptr(ind.Total[0].From),
+				To:          float64Ptr(ind.Total[0].To),
 			},
 		},
-	}, diags
+	}
+
+	var result kbapi.SLOsSloWithSummaryResponse_Indicator
+	if err := result.FromSLOsIndicatorPropertiesHistogram(histIndicator); err != nil {
+		diags.AddError("Failed to build Histogram indicator", err.Error())
+		return true, kbapi.SLOsSloWithSummaryResponse_Indicator{}, diags
+	}
+	return true, result, diags
 }
 
-func (m *tfModel) populateFromHistogramCustomIndicator(apiIndicator *slo.IndicatorPropertiesHistogram) diag.Diagnostics {
+func (m *tfModel) populateFromHistogramCustomIndicator(apiIndicator kbapi.SLOsIndicatorPropertiesHistogram) diag.Diagnostics {
 	diags := diag.Diagnostics{}
-	if apiIndicator == nil {
-		return diags
-	}
 
 	p := apiIndicator.Params
 	ind := tfHistogramCustomIndicator{
@@ -96,14 +126,14 @@ func (m *tfModel) populateFromHistogramCustomIndicator(apiIndicator *slo.Indicat
 		DataViewID:     types.StringNull(),
 		Good: []tfHistogramRange{{
 			Field:       types.StringValue(p.Good.Field),
-			Aggregation: types.StringValue(p.Good.Aggregation),
+			Aggregation: types.StringValue(string(p.Good.Aggregation)),
 			Filter:      stringOrNull(p.Good.Filter),
 			From:        float64OrNull(p.Good.From),
 			To:          float64OrNull(p.Good.To),
 		}},
 		Total: []tfHistogramRange{{
 			Field:       types.StringValue(p.Total.Field),
-			Aggregation: types.StringValue(p.Total.Aggregation),
+			Aggregation: types.StringValue(string(p.Total.Aggregation)),
 			Filter:      stringOrNull(p.Total.Filter),
 			From:        float64OrNull(p.Total.From),
 			To:          float64OrNull(p.Total.To),

@@ -90,3 +90,40 @@ resource "elasticstack_kibana_security_detection_rule" "advanced" {
     - Sysmon or equivalent process monitoring required
   EOT
 }
+
+# Security detection rule with a Slack notification action.
+# The params attribute is a JSON-encoded object — use jsonencode() to set it.
+# Nested objects (e.g. subActionParams) do not need a separate jsonencode() call.
+resource "elasticstack_kibana_security_detection_rule" "with_slack_action" {
+  name        = "Threat Detection with Slack Notification"
+  type        = "query"
+  query       = "event.category:malware"
+  language    = "kuery"
+  enabled     = true
+  description = "Detects malware events and notifies the security channel"
+  severity    = "high"
+  risk_score  = 80
+  from        = "now-6m"
+  to          = "now"
+  interval    = "5m"
+
+  actions = [
+    {
+      action_type_id = ".slack_api"
+      id             = "my-slack-connector-id"
+      group          = "default"
+      params = jsonencode({
+        subAction = "postMessage"
+        subActionParams = {
+          channelIds = ["C0123456789"]
+          text       = "Alert: {{rule.name}} fired at {{context.date}}"
+        }
+      })
+      frequency = {
+        notify_when = "onActiveAlert"
+        summary     = false
+        throttle    = "no_actions"
+      }
+    }
+  ]
+}

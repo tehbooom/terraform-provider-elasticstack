@@ -21,9 +21,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients/elasticsearch"
 	"github.com/elastic/terraform-provider-elasticstack/internal/diagutil"
+	"github.com/elastic/terraform-provider-elasticstack/internal/entitycore"
 	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
@@ -33,21 +33,11 @@ import (
 )
 
 func NewEnrichPolicyDataSource() datasource.DataSource {
-	return &enrichPolicyDataSource{}
+	return &enrichPolicyDataSource{DataSourceBase: entitycore.NewDataSourceBase(entitycore.ComponentElasticsearch, "enrich_policy")}
 }
 
 type enrichPolicyDataSource struct {
-	client *clients.APIClient
-}
-
-func (d *enrichPolicyDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
-	resp.TypeName = req.ProviderTypeName + "_elasticsearch_enrich_policy"
-}
-
-func (d *enrichPolicyDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
-	client, diags := clients.ConvertProviderData(req.ProviderData)
-	resp.Diagnostics.Append(diags...)
-	d.client = client
+	*entitycore.DataSourceBase
 }
 
 func (d *enrichPolicyDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
@@ -58,7 +48,7 @@ func GetDataSourceSchema() schema.Schema {
 	return schema.Schema{
 		MarkdownDescription: enrichPolicyDataSourceMarkdownDescription,
 		Blocks: map[string]schema.Block{
-			"elasticsearch_connection": providerschema.GetEsFWConnectionBlock(false),
+			"elasticsearch_connection": providerschema.GetEsFWConnectionBlock(),
 		},
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
@@ -104,7 +94,7 @@ func (d *enrichPolicyDataSource) Read(ctx context.Context, req datasource.ReadRe
 	}
 
 	policyName := data.Name.ValueString()
-	client, diags := clients.MaybeNewAPIClientFromFrameworkResource(ctx, data.ElasticsearchConnection, d.client)
+	client, diags := d.Client().GetElasticsearchClient(ctx, data.ElasticsearchConnection)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return

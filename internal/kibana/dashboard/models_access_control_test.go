@@ -18,6 +18,7 @@
 package dashboard
 
 import (
+	"context"
 	"testing"
 
 	"github.com/elastic/terraform-provider-elasticstack/generated/kbapi"
@@ -29,118 +30,72 @@ func TestAccessControlValue_toCreateAPI(t *testing.T) {
 	t.Run("nil receiver", func(t *testing.T) {
 		var m *AccessControlValue
 		apiModel := m.toCreateAPI()
-		assert.Nil(t, apiModel)
+		assert.Nil(t, apiModel.AccessMode)
 	})
 
 	t.Run("empty values", func(t *testing.T) {
 		m := &AccessControlValue{
 			AccessMode: types.StringNull(),
-			Owner:      types.StringNull(),
 		}
 		apiModel := m.toCreateAPI()
-		assert.NotNil(t, apiModel)
 		assert.Nil(t, apiModel.AccessMode)
-		assert.Nil(t, apiModel.Owner)
 	})
 
 	t.Run("filled values", func(t *testing.T) {
 		m := &AccessControlValue{
-			AccessMode: types.StringValue("private"),
-			Owner:      types.StringValue("user123"),
+			AccessMode: types.StringValue("write_restricted"),
 		}
 		apiModel := m.toCreateAPI()
-		assert.NotNil(t, apiModel)
-		mode := kbapi.PostDashboardsIdJSONBodyAccessControlAccessMode("private")
-		owner := "user123"
+		mode := kbapi.KbnDashboardAccessControlAccessMode("write_restricted")
 		assert.Equal(t, &mode, apiModel.AccessMode)
-		assert.Equal(t, &owner, apiModel.Owner)
-	})
-
-	t.Run("partial values - access_mode", func(t *testing.T) {
-		m := &AccessControlValue{
-			AccessMode: types.StringValue("private"),
-			Owner:      types.StringNull(),
-		}
-		apiModel := m.toCreateAPI()
-		assert.NotNil(t, apiModel)
-		mode := kbapi.PostDashboardsIdJSONBodyAccessControlAccessMode("private")
-		assert.Equal(t, &mode, apiModel.AccessMode)
-		assert.Nil(t, apiModel.Owner)
-	})
-
-	t.Run("partial values - owner", func(t *testing.T) {
-		m := &AccessControlValue{
-			AccessMode: types.StringNull(),
-			Owner:      types.StringValue("user123"),
-		}
-		apiModel := m.toCreateAPI()
-		assert.NotNil(t, apiModel)
-		assert.Nil(t, apiModel.AccessMode)
-		user123 := "user123"
-		assert.Equal(t, &user123, apiModel.Owner)
-	})
-}
-
-func TestAccessControlValue_toUpdateAPI(t *testing.T) {
-	t.Run("nil receiver", func(t *testing.T) {
-		var m *AccessControlValue
-		apiModel := m.toUpdateAPI()
-		assert.Nil(t, apiModel)
-	})
-
-	t.Run("filled values", func(t *testing.T) {
-		m := &AccessControlValue{
-			AccessMode: types.StringValue("public"),
-			Owner:      types.StringValue("admin"),
-		}
-		apiModel := m.toUpdateAPI()
-		assert.NotNil(t, apiModel)
-		mode := kbapi.PutDashboardsIdJSONBodyAccessControlAccessMode("public")
-		admin := "admin"
-		assert.Equal(t, &mode, apiModel.AccessMode)
-		assert.Equal(t, &admin, apiModel.Owner)
-	})
-
-	t.Run("empty values", func(t *testing.T) {
-		m := &AccessControlValue{
-			AccessMode: types.StringNull(),
-			Owner:      types.StringNull(),
-		}
-		apiModel := m.toUpdateAPI()
-		assert.NotNil(t, apiModel)
-		assert.Nil(t, apiModel.AccessMode)
-		assert.Nil(t, apiModel.Owner)
 	})
 }
 
 func TestNewAccessControlFromAPI(t *testing.T) {
-	t.Run("nil inputs", func(t *testing.T) {
-		val := newAccessControlFromAPI(nil, nil)
+	t.Run("nil input", func(t *testing.T) {
+		val := newAccessControlFromAPI(nil)
 		assert.Nil(t, val)
 	})
 
-	t.Run("filled inputs", func(t *testing.T) {
-		accessMode := "private"
-		owner := "user1"
-		val := newAccessControlFromAPI(&accessMode, &owner)
+	t.Run("filled input", func(t *testing.T) {
+		accessMode := "write_restricted"
+		val := newAccessControlFromAPI(&accessMode)
 		assert.NotNil(t, val)
-		assert.Equal(t, types.StringValue("private"), val.AccessMode)
-		assert.Equal(t, types.StringValue("user1"), val.Owner)
+		assert.Equal(t, types.StringValue("write_restricted"), val.AccessMode)
 	})
+}
 
-	t.Run("partial inputs - access_mode", func(t *testing.T) {
-		accessMode := "private"
-		val := newAccessControlFromAPI(&accessMode, nil)
-		assert.NotNil(t, val)
-		assert.Equal(t, types.StringValue("private"), val.AccessMode)
-		assert.Equal(t, types.StringNull(), val.Owner)
-	})
+func TestDashboardModel_populateFromAPI_clearsAccessControlWhenAccessModeMissing(t *testing.T) {
+	model := &dashboardModel{
+		AccessControl: &AccessControlValue{
+			AccessMode: types.StringValue("write_restricted"),
+		},
+	}
 
-	t.Run("partial inputs - owner", func(t *testing.T) {
-		owner := "user1"
-		val := newAccessControlFromAPI(nil, &owner)
-		assert.NotNil(t, val)
-		assert.Equal(t, types.StringNull(), val.AccessMode)
-		assert.Equal(t, types.StringValue("user1"), val.Owner)
-	})
+	resp := &kbapi.GetDashboardsIdResponse{
+		JSON200: &struct {
+			Data     kbapi.KbnDashboardData                   `json:"data"`
+			Id       string                                   `json:"id"` //nolint:revive // var-naming: API struct field
+			Meta     kbapi.KbnAsCodeMeta                      `json:"meta"`
+			Warnings *[]kbapi.KbnDashboardDroppedPanelWarning `json:"warnings,omitempty"`
+		}{
+			Data: kbapi.KbnDashboardData{
+				Title: "test dashboard",
+				Query: kbapi.KbnAsCodeQuery{},
+				TimeRange: kbapi.KbnEsQueryServerTimeRangeSchema{
+					From: "now-15m",
+					To:   "now",
+				},
+				RefreshInterval: kbapi.KbnDataServiceServerRefreshIntervalSchema{
+					Pause: true,
+					Value: 0,
+				},
+			},
+			Id: "dashboard-id",
+		},
+	}
+
+	diags := model.populateFromAPI(context.Background(), resp, "dashboard-id", "default")
+	assert.False(t, diags.HasError())
+	assert.Nil(t, model.AccessControl)
 }

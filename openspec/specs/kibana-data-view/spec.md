@@ -65,7 +65,7 @@ resource "elasticstack_kibana_data_view" "example" {
     }))>
 
     allow_no_index = <optional, computed, bool> # default false; RequiresReplace
-    namespaces     = <optional, list(string)>   # RequiresReplace
+    namespaces     = <optional, list(string)>
   }
 }
 ```
@@ -77,9 +77,9 @@ Notes:
 
 ## Requirements
 
-### Requirement: Kibana Data Views APIs (REQ-001)
+### Requirement: Kibana Data Views and Spaces APIs (REQ-001)
 
-The resource SHALL manage data views through Kibana's Data Views HTTP APIs: create, get, update, and delete ([Kibana data views API docs](https://www.elastic.co/guide/en/kibana/current/data-views-api.html)).
+The resource SHALL manage data views through Kibana's Data Views HTTP APIs for create, get, update, and delete, and SHALL use Kibana's Spaces object-sharing API when reconciling `data_view.namespaces`.
 
 #### Scenario: CRUD uses Data Views APIs
 
@@ -87,9 +87,15 @@ The resource SHALL manage data views through Kibana's Data Views HTTP APIs: crea
 - WHEN create, read, update, or delete runs
 - THEN the provider SHALL use the corresponding Kibana Data Views API operation
 
+#### Scenario: Namespace reconciliation uses Spaces API
+
+- GIVEN a managed Kibana data view whose `data_view.namespaces` membership changes
+- WHEN update runs
+- THEN the provider SHALL reconcile the namespace delta through Kibana's Spaces object-sharing API
+
 ### Requirement: API and client error surfacing (REQ-002)
 
-For create, read, update, and delete, when the provider cannot obtain the Kibana OpenAPI client, the operation SHALL return an error diagnostic. For create, read, and update, transport errors and unexpected HTTP statuses SHALL be surfaced as error diagnostics. Delete SHALL also surface transport errors and unexpected HTTP statuses, except that delete not-found SHALL be treated as success.
+For create, read, update, and delete, when the provider cannot obtain the Kibana OpenAPI client, the operation SHALL return an error diagnostic. For read and update, transport errors and unexpected HTTP statuses SHALL be surfaced as error diagnostics. For create, transport errors and unexpected HTTP statuses SHALL be surfaced as error diagnostics unless the provider can deterministically reconcile a managed data view create under REQ-014. Delete SHALL also surface transport errors and unexpected HTTP statuses, except that delete not-found SHALL be treated as success.
 
 #### Scenario: Missing Kibana OpenAPI client
 
@@ -102,6 +108,12 @@ For create, read, update, and delete, when the provider cannot obtain the Kibana
 - GIVEN a delete request for a data view that is already absent
 - WHEN Kibana returns HTTP 404
 - THEN the provider SHALL treat the delete as successful
+
+#### Scenario: Create error without deterministic reconciliation
+
+- GIVEN a create request that does not meet the managed reconciliation conditions in REQ-014
+- WHEN Kibana returns a transport error or unexpected HTTP status for create
+- THEN the provider SHALL surface an error diagnostic and SHALL NOT record Terraform state for the resource
 
 ### Requirement: Identity and canonical `id` (REQ-003)
 
@@ -129,19 +141,23 @@ The resource SHALL support Terraform import using an id of the form `<space_id>/
 - WHEN import runs
 - THEN the provider SHALL return an error diagnostic for the required `<space_id>/<data_view_id>` format
 
-### Requirement: Provider-level Kibana client only (REQ-005)
+### Requirement: Provider-level Kibana client by default with optional scoped override (REQ-005)
 
-The resource SHALL use the provider's configured Kibana OpenAPI client for create, read, update, and delete. The resource SHALL NOT support a resource-local connection override in its schema or request path.
+The resource SHALL use the provider's configured Kibana OpenAPI client by default. When `kibana_connection` is configured on the resource, the resource SHALL resolve an effective scoped client from that block and SHALL use the scoped Kibana OpenAPI client for create, read, update, and delete.
 
 #### Scenario: Standard provider connection
 
-- GIVEN the provider is configured with Kibana access
-- WHEN the resource performs CRUD
-- THEN all API operations SHALL use that provider-level Kibana OpenAPI client
+- **WHEN** `kibana_connection` is not configured on the resource
+- **THEN** all data view API operations SHALL use the provider-level Kibana OpenAPI client
+
+#### Scenario: Scoped Kibana connection
+
+- **WHEN** `kibana_connection` is configured on the resource
+- **THEN** all data view API operations SHALL use the scoped Kibana OpenAPI client derived from that block
 
 ### Requirement: Lifecycle replacement fields (REQ-006)
 
-Changes to `space_id`, `data_view.id`, `data_view.field_attrs`, `data_view.allow_no_index`, or `data_view.namespaces` SHALL require resource replacement rather than an in-place update.
+Changes to `space_id`, `data_view.id`, `data_view.field_attrs`, or `data_view.allow_no_index` SHALL require resource replacement rather than an in-place update.
 
 #### Scenario: Replace on immutable data view id
 
@@ -169,15 +185,22 @@ On create, the resource SHALL build a create request from Terraform state and se
 - WHEN create builds the API request
 - THEN the request namespaces SHALL include `"backend"`, `"o11y"`, and `"default"`
 
-### Requirement: Update request mapping (REQ-009)
+### Requirement: Update request mapping and namespace reconciliation (REQ-009)
 
-On update, the resource SHALL build an update request from Terraform state using `title`, `name`, `time_field_name`, `source_filters`, `runtime_field_map`, `field_formats`, and `allow_no_index` when those values are set. The update request SHALL NOT send `override`, `data_view.id`, `data_view.field_attrs`, or `data_view.namespaces`.
+On update, the resource SHALL build a Data Views update request from Terraform state using `title`, `name`, `time_field_name`, `source_filters`, `runtime_field_map`, `field_formats`, and `allow_no_index` when those values are set. The Data Views update request SHALL NOT send `override`, `data_view.id`, `data_view.field_attrs`, or `data_view.namespaces`. After a successful Data Views update, the provider SHALL compare prior and planned `data_view.namespaces`; when membership changed, it SHALL call Kibana's Spaces object-sharing API with the computed `spaces_to_add` and `spaces_to_remove` sets for the managed data view id before writing final state.
 
 #### Scenario: Override is create-only
 
 - GIVEN a managed data view whose configuration changes only `override`
 - WHEN update runs
 - THEN the update request SHALL NOT include `override`
+
+#### Scenario: Namespace update happens in place
+
+- GIVEN an existing managed data view and a plan that adds or removes entries from `data_view.namespaces`
+- WHEN update runs successfully
+- THEN the provider SHALL keep the same resource identity
+- AND SHALL reconcile namespace additions and removals through the Spaces API instead of replacing the resource
 
 ### Requirement: Read behavior and missing resource handling (REQ-010)
 
@@ -225,6 +248,36 @@ The resource SHALL map `field_attrs`, `runtime_field_map`, and `field_formats` b
 - WHEN create, update, and read reconcile the object
 - THEN the provider SHALL map those values between Terraform state and Kibana's runtime field structure
 
+### Requirement: Managed create reconciliation after an error response (REQ-014)
+
+When a create request supplies an explicit `data_view.id`, the provider SHALL treat that identifier as the managed identity for create reconciliation. If Kibana persists the create request but returns an error or unexpected HTTP status to the provider, the provider SHALL perform a follow-up read of that same data view id in the target `space_id`. If the read succeeds, the provider SHALL populate Terraform state from the read result and complete create successfully. If the read fails or the data view is not found, the provider SHALL surface the original create failure and SHALL NOT write state.
+
+#### Scenario: Managed create succeeds server-side but returns an error response
+
+- GIVEN configuration sets an explicit `data_view.id` and target `space_id`
+- AND Kibana persists the data view create request
+- AND Kibana returns an error or unexpected HTTP status for the create call
+- WHEN the provider handles the create result
+- THEN the provider SHALL read the data view by that configured id in the same space
+- AND SHALL populate Terraform state from the read result
+- AND SHALL complete create without leaving the resource unmanaged
+
+#### Scenario: Managed create error cannot be reconciled
+
+- GIVEN configuration sets an explicit `data_view.id`
+- AND Kibana returns an error or unexpected HTTP status for the create call
+- AND a follow-up read by that id does not return the created data view
+- WHEN the provider handles the create result
+- THEN the provider SHALL surface the original create failure
+- AND SHALL NOT write Terraform state for the resource
+
+#### Scenario: Create without explicit managed id
+
+- GIVEN configuration does not set `data_view.id`
+- WHEN Kibana returns an error or unexpected HTTP status for the create call
+- THEN the provider SHALL NOT attempt heuristic reconciliation by title or other mutable fields under REQ-014
+- AND SHALL surface the create failure as an error diagnostic
+
 ## Traceability
 
 | Area | Primary files |
@@ -233,5 +286,5 @@ The resource SHALL map `field_attrs`, `runtime_field_map`, and `field_formats` b
 | Metadata / Configure / Import | `internal/kibana/dataview/resource.go` |
 | CRUD orchestration | `internal/kibana/dataview/create.go`, `internal/kibana/dataview/read.go`, `internal/kibana/dataview/update.go`, `internal/kibana/dataview/delete.go` |
 | Model mapping / id parsing / namespace normalization | `internal/kibana/dataview/models.go` |
-| API status handling | `internal/clients/kibanaoapi/data_views.go` |
+| API status handling | `internal/clients/kibanaoapi/data_views.go`, `internal/clients/kibanaoapi/data_views_spaces.go` |
 | Composite id parsing | `internal/clients/api_client.go` |

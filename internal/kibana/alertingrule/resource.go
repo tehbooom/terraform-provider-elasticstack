@@ -22,39 +22,36 @@ import (
 	_ "embed"
 
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
+	"github.com/elastic/terraform-provider-elasticstack/internal/entitycore"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 var (
-	_ resource.Resource                   = &Resource{}
-	_ resource.ResourceWithConfigure      = &Resource{}
-	_ resource.ResourceWithImportState    = &Resource{}
-	_ resource.ResourceWithValidateConfig = &Resource{}
-	_ resource.ResourceWithUpgradeState   = &Resource{}
+	_ resource.Resource                   = newResource()
+	_ resource.ResourceWithConfigure      = newResource()
+	_ resource.ResourceWithImportState    = newResource()
+	_ resource.ResourceWithValidateConfig = newResource()
+	_ resource.ResourceWithUpgradeState   = newResource()
 )
 
 //go:embed resource-description.md
 var resourceDescription string
 
+type Resource struct {
+	*entitycore.ResourceBase
+}
+
+func newResource() *Resource {
+	return &Resource{
+		ResourceBase: entitycore.NewResourceBase(entitycore.ComponentKibana, "alerting_rule"),
+	}
+}
+
 // NewResource is a helper function to simplify the provider implementation.
 func NewResource() resource.Resource {
-	return &Resource{}
-}
-
-type Resource struct {
-	client *clients.APIClient
-}
-
-func (r *Resource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	client, diags := clients.ConvertProviderData(req.ProviderData)
-	resp.Diagnostics.Append(diags...)
-	r.client = client
-}
-
-func (r *Resource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
-	resp.TypeName = req.ProviderTypeName + "_kibana_alerting_rule"
+	return newResource()
 }
 
 func (r *Resource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {

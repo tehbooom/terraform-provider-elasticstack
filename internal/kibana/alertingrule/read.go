@@ -20,6 +20,7 @@ package alertingrule
 import (
 	"context"
 
+	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
 	kibanaoapi "github.com/elastic/terraform-provider-elasticstack/internal/clients/kibanaoapi"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -27,12 +28,12 @@ import (
 
 // readRuleFromAPI reads the alerting rule from the API and populates the model.
 // Returns (exists, diagnostics).
-func (r *Resource) readRuleFromAPI(ctx context.Context, model *alertingRuleModel) (bool, diag.Diagnostics) {
+func (r *Resource) readRuleFromAPI(ctx context.Context, apiClient *clients.KibanaScopedClient, model *alertingRuleModel) (bool, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
 	ruleID, spaceID := model.getRuleIDAndSpaceID()
 
-	oapiClient, err := r.client.GetKibanaOapiClient()
+	oapiClient, err := apiClient.GetKibanaOapiClient()
 	if err != nil {
 		diags.AddError("Failed to get Kibana client", err.Error())
 		return false, diags
@@ -60,12 +61,18 @@ func (r *Resource) Read(ctx context.Context, req resource.ReadRequest, resp *res
 		return
 	}
 
-	if r.client == nil {
+	if r.Client() == nil {
 		resp.Diagnostics.AddError("Provider not configured", "Expected configured API client")
 		return
 	}
 
-	exists, diags := r.readRuleFromAPI(ctx, &state)
+	client, diags := r.Client().GetKibanaClient(ctx, state.KibanaConnection)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	exists, diags := r.readRuleFromAPI(ctx, client, &state)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return

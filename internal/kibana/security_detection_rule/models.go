@@ -35,18 +35,19 @@ import (
 var MinVersionResponseActions = version.Must(version.NewVersion("8.16.0"))
 
 type Data struct {
-	ID       types.String `tfsdk:"id"`
-	SpaceID  types.String `tfsdk:"space_id"`
-	RuleID   types.String `tfsdk:"rule_id"`
-	Name     types.String `tfsdk:"name"`
-	Type     types.String `tfsdk:"type"`
-	Query    types.String `tfsdk:"query"`
-	Language types.String `tfsdk:"language"`
-	Index    types.List   `tfsdk:"index"`
-	Enabled  types.Bool   `tfsdk:"enabled"`
-	From     types.String `tfsdk:"from"`
-	To       types.String `tfsdk:"to"`
-	Interval types.String `tfsdk:"interval"`
+	ID               types.String `tfsdk:"id"`
+	KibanaConnection types.List   `tfsdk:"kibana_connection"`
+	SpaceID          types.String `tfsdk:"space_id"`
+	RuleID           types.String `tfsdk:"rule_id"`
+	Name             types.String `tfsdk:"name"`
+	Type             types.String `tfsdk:"type"`
+	Query            types.String `tfsdk:"query"`
+	Language         types.String `tfsdk:"language"`
+	Index            types.List   `tfsdk:"index"`
+	Enabled          types.Bool   `tfsdk:"enabled"`
+	From             types.String `tfsdk:"from"`
+	To               types.String `tfsdk:"to"`
+	Interval         types.String `tfsdk:"interval"`
 
 	// Rule content
 	Description         types.String `tfsdk:"description"`
@@ -174,13 +175,13 @@ type CardinalityModel struct {
 }
 
 type ActionModel struct {
-	ActionTypeID types.String `tfsdk:"action_type_id"`
-	ID           types.String `tfsdk:"id"`
-	Params       types.Map    `tfsdk:"params"`
-	Group        types.String `tfsdk:"group"`
-	UUID         types.String `tfsdk:"uuid"`
-	AlertsFilter types.Map    `tfsdk:"alerts_filter"`
-	Frequency    types.Object `tfsdk:"frequency"`
+	ActionTypeID types.String         `tfsdk:"action_type_id"`
+	ID           types.String         `tfsdk:"id"`
+	Params       jsontypes.Normalized `tfsdk:"params"`
+	Group        types.String         `tfsdk:"group"`
+	UUID         types.String         `tfsdk:"uuid"`
+	AlertsFilter types.Map            `tfsdk:"alerts_filter"`
+	Frequency    types.Object         `tfsdk:"frequency"`
 }
 
 type ActionFrequencyModel struct {

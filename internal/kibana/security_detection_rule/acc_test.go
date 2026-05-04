@@ -19,6 +19,7 @@ package securitydetectionrule_test
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"regexp"
 	"strings"
@@ -1541,7 +1542,7 @@ func TestAccResourceSecurityDetectionRule_Threshold(t *testing.T) {
 }
 
 func testAccCheckSecurityDetectionRuleDestroy(s *terraform.State) error {
-	client, err := clients.NewAcceptanceTestingClient()
+	client, err := clients.NewAcceptanceTestingKibanaScopedClient()
 	if err != nil {
 		return err
 	}
@@ -1660,7 +1661,7 @@ func TestAccResourceSecurityDetectionRule_WithConnectorAction(t *testing.T) {
 					resource.TestCheckResourceAttr(resourceName, "actions.0.action_type_id", ".cases-webhook"),
 					resource.TestCheckResourceAttr(resourceName, "actions.0.id", connectorID),
 					resource.TestCheckResourceAttr(resourceName, "actions.0.group", "default"),
-					resource.TestCheckResourceAttr(resourceName, "actions.0.params.message", "CRITICAL EQL Alert: PowerShell process detected"),
+					resource.TestCheckResourceAttr(resourceName, "actions.0.params", `{"message":"CRITICAL EQL Alert: PowerShell process detected"}`),
 					resource.TestCheckResourceAttr(resourceName, "actions.0.frequency.notify_when", "onActiveAlert"),
 					resource.TestCheckResourceAttr(resourceName, "actions.0.frequency.summary", "true"),
 					resource.TestCheckResourceAttr(resourceName, "actions.0.frequency.throttle", "10m"),
@@ -1699,7 +1700,7 @@ func TestAccResourceSecurityDetectionRule_WithConnectorAction(t *testing.T) {
 					resource.TestCheckResourceAttr(resourceName, "risk_score_mapping.0.risk_score", "95"),
 
 					// Check updated action attributes
-					resource.TestCheckResourceAttr(resourceName, "actions.0.params.message", "UPDATED CRITICAL Alert: Security event detected"),
+					resource.TestCheckResourceAttr(resourceName, "actions.0.params", `{"message":"UPDATED CRITICAL Alert: Security event detected"}`),
 					resource.TestCheckResourceAttr(resourceName, "actions.0.frequency.throttle", "5m"),
 
 					// Check exceptions list attributes
@@ -2741,6 +2742,64 @@ func TestAccResourceSecurityDetectionRule_ValidateConfig(t *testing.T) {
 					resource.TestCheckResourceAttr(securityDetectionRuleResourceName, "type", "machine_learning"),
 					resource.TestCheckNoResourceAttr(securityDetectionRuleResourceName, "index.0"),
 					resource.TestCheckNoResourceAttr(securityDetectionRuleResourceName, "data_view_id"),
+				),
+			},
+		},
+	})
+}
+
+//go:embed testdata/TestAccResourceSecurityDetectionRule_StateUpgradeParamsFromMap/map_create/main.tf
+var stateUpgradeParamsFromMapCreateConfig string
+
+func TestAccResourceSecurityDetectionRule_StateUpgradeParamsFromMap(t *testing.T) {
+	resourceName := securityDetectionRuleResourceName
+	connectorResourceName := "elasticstack_kibana_action_connector.test"
+	createRuleName := testAccRandomizedRuleName("test-state-upgrade-rule")
+	connectorName := testAccRandomizedRuleName("test-connector")
+	connectorID := uuid.New().String()
+
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:     func() { acctest.PreCheck(t) },
+		CheckDestroy: testAccCheckSecurityDetectionRuleDestroy,
+		Steps: []resource.TestStep{
+			{
+				// Create the detection rule with the last provider version where actions[*].params was a map(string).
+				SkipFunc: versionutils.CheckIfVersionIsUnsupported(minResponseActionVersionSupport),
+				ExternalProviders: map[string]resource.ExternalProvider{
+					"elasticstack": {
+						Source:            "elastic/elasticstack",
+						VersionConstraint: "0.14.4",
+					},
+				},
+				Config: stateUpgradeParamsFromMapCreateConfig,
+				ConfigVariables: config.Variables{
+					"name":           config.StringVariable(createRuleName),
+					"connector_name": config.StringVariable(connectorName),
+					"connector_id":   config.StringVariable(connectorID),
+				},
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "name", createRuleName),
+					resource.TestCheckResourceAttr(connectorResourceName, "name", connectorName),
+					resource.TestCheckResourceAttr(resourceName, "actions.#", "1"),
+					resource.TestCheckResourceAttr(resourceName, "actions.0.params.message", "Test state upgrade alert"),
+				),
+			},
+			{
+				// Re-apply with the current provider. The state upgrader converts params from map(string) to a
+				// JSON-encoded string, so we write params as a string in this config.
+				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(minResponseActionVersionSupport),
+				ProtoV6ProviderFactories: acctest.Providers,
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("current"),
+				ConfigVariables: config.Variables{
+					"name":           config.StringVariable(createRuleName),
+					"connector_name": config.StringVariable(connectorName),
+					"connector_id":   config.StringVariable(connectorID),
+				},
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "name", createRuleName),
+					resource.TestCheckResourceAttr(connectorResourceName, "name", connectorName),
+					resource.TestCheckResourceAttr(resourceName, "actions.#", "1"),
+					resource.TestCheckResourceAttr(resourceName, "actions.0.params", `{"message":"Test state upgrade alert"}`),
 				),
 			},
 		},

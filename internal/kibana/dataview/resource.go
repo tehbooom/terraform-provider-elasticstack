@@ -19,36 +19,33 @@ package dataview
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
+	"github.com/elastic/terraform-provider-elasticstack/internal/entitycore"
+	providerschema "github.com/elastic/terraform-provider-elasticstack/internal/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 var (
-	_ resource.Resource                = &Resource{}
-	_ resource.ResourceWithConfigure   = &Resource{}
-	_ resource.ResourceWithImportState = &Resource{}
+	_ resource.Resource                = newResource()
+	_ resource.ResourceWithConfigure   = newResource()
+	_ resource.ResourceWithImportState = newResource()
 )
+
+type Resource struct {
+	*entitycore.ResourceBase
+}
+
+func newResource() *Resource {
+	return &Resource{
+		ResourceBase: entitycore.NewResourceBase(entitycore.ComponentKibana, "data_view"),
+	}
+}
 
 // NewResource is a helper function to simplify the provider implementation.
 func NewResource() resource.Resource {
-	return &Resource{}
-}
-
-type Resource struct {
-	client *clients.APIClient
-}
-
-func (r *Resource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	client, diags := clients.ConvertProviderData(req.ProviderData)
-	resp.Diagnostics.Append(diags...)
-	r.client = client
-}
-
-func (r *Resource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
-	resp.TypeName = fmt.Sprintf("%s_%s", req.ProviderTypeName, "kibana_data_view")
+	return newResource()
 }
 
 func (r *Resource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
@@ -59,10 +56,11 @@ func (r *Resource) ImportState(ctx context.Context, req resource.ImportStateRequ
 	}
 
 	stateModel := dataViewModel{
-		ID:       types.StringValue(req.ID),
-		SpaceID:  types.StringValue(composite.ClusterID),
-		Override: types.BoolValue(false),
-		DataView: types.ObjectUnknown(getDataViewAttrTypes()),
+		ID:               types.StringValue(req.ID),
+		SpaceID:          types.StringValue(composite.ClusterID),
+		Override:         types.BoolValue(false),
+		DataView:         types.ObjectUnknown(getDataViewAttrTypes()),
+		KibanaConnection: providerschema.KibanaConnectionNullList(),
 	}
 
 	diags = resp.State.Set(ctx, stateModel)

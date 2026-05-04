@@ -34,7 +34,7 @@ func Test_objectValueToSSL(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    args
-		want    *kbapi.NewOutputSsl
+		want    *outputSSLAPIModel
 		wantErr bool
 	}{
 		{
@@ -44,7 +44,7 @@ func Test_objectValueToSSL(t *testing.T) {
 			},
 		},
 		{
-			name: "returns an ssl object when populated",
+			name: "returns an ssl object when populated without verification mode",
 			args: args{
 				obj: types.ObjectValueMust(
 					getSslAttrTypes(),
@@ -52,13 +52,35 @@ func Test_objectValueToSSL(t *testing.T) {
 						"certificate_authorities": types.ListValueMust(types.StringType, []attr.Value{types.StringValue("ca")}),
 						"certificate":             types.StringValue("cert"),
 						"key":                     types.StringValue("key"),
+						"verification_mode":       types.StringNull(),
 					},
 				),
 			},
-			want: &kbapi.NewOutputSsl{
+			want: &outputSSLAPIModel{
 				Certificate:            new("cert"),
 				CertificateAuthorities: &[]string{"ca"},
 				Key:                    new("key"),
+				VerificationMode:       nil,
+			},
+		},
+		{
+			name: "returns verification mode when populated",
+			args: args{
+				obj: types.ObjectValueMust(
+					getSslAttrTypes(),
+					map[string]attr.Value{
+						"certificate_authorities": types.ListValueMust(types.StringType, []attr.Value{types.StringValue("ca")}),
+						"certificate":             types.StringValue("cert"),
+						"key":                     types.StringValue("key"),
+						"verification_mode":       types.StringValue("none"),
+					},
+				),
+			},
+			want: &outputSSLAPIModel{
+				Certificate:            new("cert"),
+				CertificateAuthorities: &[]string{"ca"},
+				Key:                    new("key"),
+				VerificationMode:       new(kbapi.KibanaHTTPAPIsOutputSslVerificationModeNone),
 			},
 		},
 	}
@@ -81,7 +103,7 @@ func Test_objectValueToSSLUpdate(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    args
-		want    *kbapi.UpdateOutputSsl
+		want    *outputSSLAPIModel
 		wantErr bool
 	}{
 		{
@@ -91,7 +113,7 @@ func Test_objectValueToSSLUpdate(t *testing.T) {
 			},
 		},
 		{
-			name: "returns an ssl object when populated",
+			name: "returns an ssl object when populated with verification mode",
 			args: args{
 				obj: types.ObjectValueMust(
 					getSslAttrTypes(),
@@ -99,13 +121,15 @@ func Test_objectValueToSSLUpdate(t *testing.T) {
 						"certificate_authorities": types.ListValueMust(types.StringType, []attr.Value{types.StringValue("ca")}),
 						"certificate":             types.StringValue("cert"),
 						"key":                     types.StringValue("key"),
+						"verification_mode":       types.StringValue("none"),
 					},
 				),
 			},
-			want: &kbapi.UpdateOutputSsl{
+			want: &outputSSLAPIModel{
 				Certificate:            new("cert"),
 				CertificateAuthorities: &[]string{"ca"},
 				Key:                    new("key"),
+				VerificationMode:       new(kbapi.KibanaHTTPAPIsOutputSslVerificationModeNone),
 			},
 		},
 	}
@@ -123,7 +147,10 @@ func Test_objectValueToSSLUpdate(t *testing.T) {
 
 func Test_sslToObjectValue(t *testing.T) {
 	type args struct {
-		ssl *kbapi.OutputSsl
+		certificate            *string
+		certificateAuthorities *[]string
+		key                    *string
+		verificationMode       *kbapi.KibanaHTTPAPIsOutputSslVerificationMode
 	}
 	tests := []struct {
 		name    string
@@ -134,40 +161,40 @@ func Test_sslToObjectValue(t *testing.T) {
 		{
 			name: "returns nil when ssl is nil",
 			args: args{
-				ssl: nil,
+				certificate:            nil,
+				certificateAuthorities: nil,
+				key:                    nil,
+				verificationMode:       nil,
 			},
 			want: types.ObjectNull(getSslAttrTypes()),
 		},
 		{
 			name: "returns null object when ssl has all empty fields",
 			args: args{
-				ssl: &kbapi.OutputSsl{
-					Certificate:            nil,
-					CertificateAuthorities: nil,
-					Key:                    nil,
-				},
+				certificate:            nil,
+				certificateAuthorities: nil,
+				key:                    nil,
+				verificationMode:       nil,
 			},
 			want: types.ObjectNull(getSslAttrTypes()),
 		},
 		{
 			name: "returns null object when ssl has empty string pointers and empty slice",
 			args: args{
-				ssl: &kbapi.OutputSsl{
-					Certificate:            new(""),
-					CertificateAuthorities: &[]string{},
-					Key:                    new(""),
-				},
+				certificate:            new(""),
+				certificateAuthorities: &[]string{},
+				key:                    new(""),
+				verificationMode:       nil,
 			},
 			want: types.ObjectNull(getSslAttrTypes()),
 		},
 		{
-			name: "returns an object when populated",
+			name: "returns an object when populated with nil verification mode",
 			args: args{
-				ssl: &kbapi.OutputSsl{
-					Certificate:            new("cert"),
-					CertificateAuthorities: &[]string{"ca"},
-					Key:                    new("key"),
-				},
+				certificate:            new("cert"),
+				certificateAuthorities: &[]string{"ca"},
+				key:                    new("key"),
+				verificationMode:       nil,
 			},
 			want: types.ObjectValueMust(
 				getSslAttrTypes(),
@@ -175,13 +202,50 @@ func Test_sslToObjectValue(t *testing.T) {
 					"certificate_authorities": types.ListValueMust(types.StringType, []attr.Value{types.StringValue("ca")}),
 					"certificate":             types.StringValue("cert"),
 					"key":                     types.StringValue("key"),
+					"verification_mode":       types.StringNull(),
+				},
+			),
+		},
+		{
+			name: "returns an object when verification mode is populated",
+			args: args{
+				certificate:            new("cert"),
+				certificateAuthorities: &[]string{"ca"},
+				key:                    new("key"),
+				verificationMode:       new(kbapi.KibanaHTTPAPIsOutputSslVerificationModeNone),
+			},
+			want: types.ObjectValueMust(
+				getSslAttrTypes(),
+				map[string]attr.Value{
+					"certificate_authorities": types.ListValueMust(types.StringType, []attr.Value{types.StringValue("ca")}),
+					"certificate":             types.StringValue("cert"),
+					"key":                     types.StringValue("key"),
+					"verification_mode":       types.StringValue("none"),
+				},
+			),
+		},
+		{
+			name: "returns an object when only verification mode is populated",
+			args: args{
+				certificate:            nil,
+				certificateAuthorities: nil,
+				key:                    nil,
+				verificationMode:       new(kbapi.KibanaHTTPAPIsOutputSslVerificationModeNone),
+			},
+			want: types.ObjectValueMust(
+				getSslAttrTypes(),
+				map[string]attr.Value{
+					"certificate_authorities": types.ListNull(types.StringType),
+					"certificate":             types.StringNull(),
+					"key":                     types.StringNull(),
+					"verification_mode":       types.StringValue("none"),
 				},
 			),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, diags := sslToObjectValue(context.Background(), tt.args.ssl)
+			got, diags := sslToObjectValue(context.Background(), tt.args.certificate, tt.args.certificateAuthorities, tt.args.key, tt.args.verificationMode)
 			if (diags.HasError()) != tt.wantErr {
 				t.Errorf("sslToObjectValue() error = %v, wantErr %v", diags.HasError(), tt.wantErr)
 				return

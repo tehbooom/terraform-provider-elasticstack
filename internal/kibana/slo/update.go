@@ -20,7 +20,8 @@ package slo
 import (
 	"context"
 
-	clientkibana "github.com/elastic/terraform-provider-elasticstack/internal/clients/kibana"
+	"github.com/elastic/terraform-provider-elasticstack/generated/kbapi"
+	kibanaoapi "github.com/elastic/terraform-provider-elasticstack/internal/clients/kibanaoapi"
 	"github.com/elastic/terraform-provider-elasticstack/internal/diagutil"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 )
@@ -33,8 +34,14 @@ func (r *Resource) Update(ctx context.Context, request resource.UpdateRequest, r
 		return
 	}
 
-	if r.client == nil {
-		response.Diagnostics.AddError("Provider not configured", "Expected configured API client")
+	if r.Client() == nil {
+		response.Diagnostics.AddError("Provider not configured", "Expected configured provider client factory")
+		return
+	}
+
+	apiClient, diags := r.Client().GetKibanaClient(ctx, plan.KibanaConnection)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
 		return
 	}
 
@@ -44,7 +51,7 @@ func (r *Resource) Update(ctx context.Context, request resource.UpdateRequest, r
 		return
 	}
 
-	serverVersion, sdkDiags := r.client.ServerVersion(ctx)
+	serverVersion, sdkDiags := apiClient.ServerVersion(ctx)
 	response.Diagnostics.Append(diagutil.FrameworkDiagsFromSDK(sdkDiags)...)
 	if response.Diagnostics.HasError() {
 		return
@@ -91,13 +98,46 @@ func (r *Resource) Update(ctx context.Context, request resource.UpdateRequest, r
 		return
 	}
 
-	_, sdkDiags = clientkibana.UpdateSlo(ctx, r.client, apiModel, supportsMultipleGroupBy)
-	response.Diagnostics.Append(diagutil.FrameworkDiagsFromSDK(sdkDiags)...)
+	oapi, err := apiClient.GetKibanaOapiClient()
+	if err != nil {
+		response.Diagnostics.AddError("Failed to get Kibana API client", err.Error())
+		return
+	}
+
+	indicator, convErr := kibanaoapi.ResponseIndicatorToUpdateIndicator(apiModel.Indicator)
+	if convErr != nil {
+		response.Diagnostics.AddError("Failed to convert indicator", convErr.Error())
+		return
+	}
+
+	groupBy := kibanaoapi.TransformGroupBy(apiModel.GroupBy, supportsMultipleGroupBy)
+	reqModel := kbapi.SLOsUpdateSloRequest{
+		Name:            &apiModel.Name,
+		Description:     &apiModel.Description,
+		Indicator:       &indicator,
+		TimeWindow:      &apiModel.TimeWindow,
+		BudgetingMethod: &apiModel.BudgetingMethod,
+		Objective:       &apiModel.Objective,
+		Settings:        apiModel.Settings,
+		GroupBy:         groupBy,
+		Tags:            kibanaoapi.TagsToPtr(apiModel.Tags),
+		Artifacts:       apiModel.Artifacts,
+	}
+
+	desiredEnabled := plan.Enabled
+
+	fwDiags := kibanaoapi.UpdateSlo(ctx, oapi, apiModel.SpaceID, apiModel.SloID, reqModel)
+	response.Diagnostics.Append(fwDiags...)
 	if response.Diagnostics.HasError() {
 		return
 	}
 
-	r.readAndPopulate(ctx, &plan, &response.Diagnostics)
+	r.readAndPopulate(ctx, apiClient, &plan, &response.Diagnostics)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	r.reconcileSloEnabledAfterWrite(ctx, apiClient, oapi, apiModel.SpaceID, apiModel.SloID, desiredEnabled, &plan, &response.Diagnostics)
 	if response.Diagnostics.HasError() {
 		return
 	}

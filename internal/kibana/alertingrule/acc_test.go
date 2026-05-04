@@ -27,6 +27,7 @@ import (
 	"testing"
 
 	"github.com/elastic/terraform-provider-elasticstack/internal/acctest"
+	"github.com/elastic/terraform-provider-elasticstack/internal/acctest/checks"
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
 	kibanaoapi "github.com/elastic/terraform-provider-elasticstack/internal/clients/kibanaoapi"
 	"github.com/elastic/terraform-provider-elasticstack/internal/versionutils"
@@ -518,7 +519,7 @@ func TestAccResourceAlertingRuleInconsistentParams(t *testing.T) {
 	})
 }
 
-//go:embed testdata/TestAccResourceAlertingRuleFromSDK/create/rule.tf
+//go:embed testdata/TestAccResourceAlertingRuleFromSDK/create/main.tf
 var testAccResourceAlertingRuleFromSDKCreateConfig string
 
 func TestAccResourceAlertingRuleFromSDK(t *testing.T) {
@@ -829,34 +830,16 @@ func TestAccResourceAlertingRuleFrequencyExclusivity(t *testing.T) {
 	})
 }
 
-func checkResourceAlertingRuleDestroy(s *terraform.State) error {
-	client, err := clients.NewAcceptanceTestingClient()
-	if err != nil {
-		return err
-	}
-
-	oapiClient, err := client.GetKibanaOapiClient()
-	if err != nil {
-		return err
-	}
-
-	for _, rs := range s.RootModule().Resources {
-		if rs.Type != "elasticstack_kibana_alerting_rule" {
-			continue
-		}
-		compID, _ := clients.CompositeIDFromStr(rs.Primary.ID)
-
-		rule, diags := kibanaoapi.GetAlertingRule(context.Background(), oapiClient, compID.ClusterID, compID.ResourceID)
+var checkResourceAlertingRuleDestroy = checks.KibanaResourceDestroyCheckCompositeID(
+	"elasticstack_kibana_alerting_rule",
+	func(ctx context.Context, client *kibanaoapi.Client, spaceID, ruleID string) (bool, error) {
+		rule, diags := kibanaoapi.GetAlertingRule(ctx, client, spaceID, ruleID)
 		if diags.HasError() {
-			return fmt.Errorf("Failed to get alerting rule: %v", diags)
+			return false, fmt.Errorf("Failed to get alerting rule: %v", diags)
 		}
-
-		if rule != nil {
-			return fmt.Errorf("Alerting rule (%s) still exists", compID.ResourceID)
-		}
-	}
-	return nil
-}
+		return rule != nil, nil
+	},
+)
 
 func testCheckAlertingRuleAPIParams(resourceName string, check func(params map[string]any) error) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
@@ -867,7 +850,7 @@ func testCheckAlertingRuleAPIParams(resourceName string, check func(params map[s
 
 		compID, _ := clients.CompositeIDFromStr(rs.Primary.ID)
 
-		client, err := clients.NewAcceptanceTestingClient()
+		client, err := clients.NewAcceptanceTestingKibanaScopedClient()
 		if err != nil {
 			return err
 		}

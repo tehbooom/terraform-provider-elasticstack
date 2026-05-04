@@ -26,15 +26,23 @@ import (
 
 	"github.com/elastic/terraform-provider-elasticstack/generated/kbapi"
 	"github.com/elastic/terraform-provider-elasticstack/internal/models"
+	"github.com/elastic/terraform-provider-elasticstack/internal/utils/typeutils"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 )
 
 func CreateAlertingRule(ctx context.Context, client *Client, spaceID string, rule models.AlertingRule) (*models.AlertingRule, diag.Diagnostics) {
 	body := buildCreateRequestBody(rule)
+
+	var req kbapi.PostAlertingRuleIdJSONRequestBody
+	err := req.FromAlertingRuleAPIBodyGeneric(body)
+	if err != nil {
+		return nil, diag.Diagnostics{diag.NewErrorDiagnostic("Unable to build alerting rule create request", err.Error())}
+	}
+
 	resp, err := client.API.PostAlertingRuleIdWithResponse(
 		ctx,
 		rule.RuleID,
-		body,
+		req,
 		SpaceAwarePathRequestEditor(spaceID),
 	)
 	if err != nil {
@@ -368,8 +376,8 @@ func ConvertResponseToModel(spaceID string, resp any) (*models.AlertingRule, dia
 	}, nil
 }
 
-func buildCreateRequestBody(rule models.AlertingRule) kbapi.PostAlertingRuleIdJSONRequestBody {
-	body := kbapi.PostAlertingRuleIdJSONRequestBody{
+func buildCreateRequestBody(rule models.AlertingRule) kbapi.AlertingRuleAPIBodyGeneric {
+	body := kbapi.AlertingRuleAPIBodyGeneric{
 		Consumer:   rule.Consumer,
 		Name:       rule.Name,
 		RuleTypeId: rule.RuleTypeID,
@@ -381,9 +389,7 @@ func buildCreateRequestBody(rule models.AlertingRule) kbapi.PostAlertingRuleIdJS
 	}
 
 	if rule.Params != nil {
-		params := kbapi.AlertingRuleAPIParams{
-			AdditionalProperties: rule.Params,
-		}
+		params := kbapi.AlertingRuleAPIParams(typeutils.PointerInterfaceMapFromAnyMap(rule.Params))
 		body.Params = &params
 	}
 
@@ -392,7 +398,7 @@ func buildCreateRequestBody(rule models.AlertingRule) kbapi.PostAlertingRuleIdJS
 	}
 
 	if rule.NotifyWhen != nil && *rule.NotifyWhen != "" {
-		notifyWhen := kbapi.PostAlertingRuleIdJSONBodyNotifyWhen(*rule.NotifyWhen)
+		notifyWhen := kbapi.AlertingRuleAPIBodyGenericNotifyWhen(*rule.NotifyWhen)
 		body.NotifyWhen = &notifyWhen
 	}
 
@@ -424,15 +430,15 @@ func buildCreateRequestBody(rule models.AlertingRule) kbapi.PostAlertingRuleIdJS
 					Dsl     *string `json:"dsl,omitempty"`
 					Filters []struct {
 						State *struct {
-							Store kbapi.PostAlertingRuleIdJSONBodyActionsAlertsFilterQueryFiltersStateStore `json:"store"`
+							Store kbapi.AlertingRuleAPIBodyGenericActionsAlertsFilterQueryFiltersStateStore `json:"store"`
 						} `json:"$state,omitempty"`
-						Meta  map[string]any  `json:"meta"`
-						Query *map[string]any `json:"query,omitempty"`
+						Meta  map[string]*any  `json:"meta"`
+						Query *map[string]*any `json:"query,omitempty"`
 					} `json:"filters"`
 					Kql string `json:"kql"`
 				} `json:"query,omitempty"`
 				Timeframe *struct {
-					Days  []kbapi.PostAlertingRuleIdJSONBodyActionsAlertsFilterTimeframeDays `json:"days"`
+					Days  []kbapi.AlertingRuleAPIBodyGenericActionsAlertsFilterTimeframeDays `json:"days"`
 					Hours struct {
 						End   string `json:"end"`
 						Start string `json:"start"`
@@ -441,15 +447,15 @@ func buildCreateRequestBody(rule models.AlertingRule) kbapi.PostAlertingRuleIdJS
 				} `json:"timeframe,omitempty"`
 			} `json:"alerts_filter,omitempty"`
 			Frequency *struct {
-				NotifyWhen kbapi.PostAlertingRuleIdJSONBodyActionsFrequencyNotifyWhen `json:"notify_when"`
+				NotifyWhen kbapi.AlertingRuleAPIBodyGenericActionsFrequencyNotifyWhen `json:"notify_when"`
 				Summary    bool                                                       `json:"summary"`
 				Throttle   *string                                                    `json:"throttle,omitempty"`
 			} `json:"frequency,omitempty"`
-			Group                   *string         `json:"group,omitempty"`
-			Id                      string          `json:"id"` //nolint:revive // var-naming: API struct field
-			Params                  *map[string]any `json:"params,omitempty"`
-			UseAlertDataForTemplate *bool           `json:"use_alert_data_for_template,omitempty"`
-			Uuid                    *string         `json:"uuid,omitempty"` //nolint:revive // var-naming: API struct field
+			Group                   *string          `json:"group,omitempty"`
+			Id                      string           `json:"id"` //nolint:revive // var-naming: API struct field
+			Params                  *map[string]*any `json:"params,omitempty"`
+			UseAlertDataForTemplate *bool            `json:"use_alert_data_for_template,omitempty"`
+			Uuid                    *string          `json:"uuid,omitempty"` //nolint:revive // var-naming: API struct field
 		}, len(rule.Actions))
 
 		for i, action := range rule.Actions {
@@ -459,16 +465,17 @@ func buildCreateRequestBody(rule models.AlertingRule) kbapi.PostAlertingRuleIdJS
 				actions[i].Group = &group
 			}
 			if action.Params != nil {
-				actions[i].Params = &action.Params
+				params := typeutils.PointerInterfaceMapFromAnyMap(action.Params)
+				actions[i].Params = &params
 			}
 
 			if action.Frequency != nil {
 				actions[i].Frequency = &struct {
-					NotifyWhen kbapi.PostAlertingRuleIdJSONBodyActionsFrequencyNotifyWhen `json:"notify_when"`
+					NotifyWhen kbapi.AlertingRuleAPIBodyGenericActionsFrequencyNotifyWhen `json:"notify_when"`
 					Summary    bool                                                       `json:"summary"`
 					Throttle   *string                                                    `json:"throttle,omitempty"`
 				}{
-					NotifyWhen: kbapi.PostAlertingRuleIdJSONBodyActionsFrequencyNotifyWhen(action.Frequency.NotifyWhen),
+					NotifyWhen: kbapi.AlertingRuleAPIBodyGenericActionsFrequencyNotifyWhen(action.Frequency.NotifyWhen),
 					Summary:    action.Frequency.Summary,
 					Throttle:   action.Frequency.Throttle,
 				}
@@ -480,15 +487,15 @@ func buildCreateRequestBody(rule models.AlertingRule) kbapi.PostAlertingRuleIdJS
 						Dsl     *string `json:"dsl,omitempty"`
 						Filters []struct {
 							State *struct {
-								Store kbapi.PostAlertingRuleIdJSONBodyActionsAlertsFilterQueryFiltersStateStore `json:"store"`
+								Store kbapi.AlertingRuleAPIBodyGenericActionsAlertsFilterQueryFiltersStateStore `json:"store"`
 							} `json:"$state,omitempty"`
-							Meta  map[string]any  `json:"meta"`
-							Query *map[string]any `json:"query,omitempty"`
+							Meta  map[string]*any  `json:"meta"`
+							Query *map[string]*any `json:"query,omitempty"`
 						} `json:"filters"`
 						Kql string `json:"kql"`
 					} `json:"query,omitempty"`
 					Timeframe *struct {
-						Days  []kbapi.PostAlertingRuleIdJSONBodyActionsAlertsFilterTimeframeDays `json:"days"`
+						Days  []kbapi.AlertingRuleAPIBodyGenericActionsAlertsFilterTimeframeDays `json:"days"`
 						Hours struct {
 							End   string `json:"end"`
 							Start string `json:"start"`
@@ -502,32 +509,32 @@ func buildCreateRequestBody(rule models.AlertingRule) kbapi.PostAlertingRuleIdJS
 						Dsl     *string `json:"dsl,omitempty"`
 						Filters []struct {
 							State *struct {
-								Store kbapi.PostAlertingRuleIdJSONBodyActionsAlertsFilterQueryFiltersStateStore `json:"store"`
+								Store kbapi.AlertingRuleAPIBodyGenericActionsAlertsFilterQueryFiltersStateStore `json:"store"`
 							} `json:"$state,omitempty"`
-							Meta  map[string]any  `json:"meta"`
-							Query *map[string]any `json:"query,omitempty"`
+							Meta  map[string]*any  `json:"meta"`
+							Query *map[string]*any `json:"query,omitempty"`
 						} `json:"filters"`
 						Kql string `json:"kql"`
 					}{
 						Kql: *action.AlertsFilter.Kql,
 						Filters: []struct {
 							State *struct {
-								Store kbapi.PostAlertingRuleIdJSONBodyActionsAlertsFilterQueryFiltersStateStore `json:"store"`
+								Store kbapi.AlertingRuleAPIBodyGenericActionsAlertsFilterQueryFiltersStateStore `json:"store"`
 							} `json:"$state,omitempty"`
-							Meta  map[string]any  `json:"meta"`
-							Query *map[string]any `json:"query,omitempty"`
+							Meta  map[string]*any  `json:"meta"`
+							Query *map[string]*any `json:"query,omitempty"`
 						}{},
 					}
 				}
 
 				if action.AlertsFilter.Timeframe != nil {
-					days := make([]kbapi.PostAlertingRuleIdJSONBodyActionsAlertsFilterTimeframeDays, len(action.AlertsFilter.Timeframe.Days))
+					days := make([]kbapi.AlertingRuleAPIBodyGenericActionsAlertsFilterTimeframeDays, len(action.AlertsFilter.Timeframe.Days))
 					for j, d := range action.AlertsFilter.Timeframe.Days {
-						days[j] = kbapi.PostAlertingRuleIdJSONBodyActionsAlertsFilterTimeframeDays(d)
+						days[j] = kbapi.AlertingRuleAPIBodyGenericActionsAlertsFilterTimeframeDays(d)
 					}
 
 					filter.Timeframe = &struct {
-						Days  []kbapi.PostAlertingRuleIdJSONBodyActionsAlertsFilterTimeframeDays `json:"days"`
+						Days  []kbapi.AlertingRuleAPIBodyGenericActionsAlertsFilterTimeframeDays `json:"days"`
 						Hours struct {
 							End   string `json:"end"`
 							Start string `json:"start"`
@@ -567,7 +574,8 @@ func buildUpdateRequestBody(rule models.AlertingRule) kbapi.PutAlertingRuleIdJSO
 	}
 
 	if rule.Params != nil {
-		body.Params = &rule.Params
+		params := typeutils.PointerInterfaceMapFromAnyMap(rule.Params)
+		body.Params = &params
 	}
 
 	if rule.NotifyWhen != nil && *rule.NotifyWhen != "" {
@@ -605,8 +613,8 @@ func buildUpdateRequestBody(rule models.AlertingRule) kbapi.PutAlertingRuleIdJSO
 						State *struct {
 							Store kbapi.PutAlertingRuleIdJSONBodyActionsAlertsFilterQueryFiltersStateStore `json:"store"`
 						} `json:"$state,omitempty"`
-						Meta  map[string]any  `json:"meta"`
-						Query *map[string]any `json:"query,omitempty"`
+						Meta  map[string]*any  `json:"meta"`
+						Query *map[string]*any `json:"query,omitempty"`
 					} `json:"filters"`
 					Kql string `json:"kql"`
 				} `json:"query,omitempty"`
@@ -624,18 +632,19 @@ func buildUpdateRequestBody(rule models.AlertingRule) kbapi.PutAlertingRuleIdJSO
 				Summary    bool                                                      `json:"summary"`
 				Throttle   *string                                                   `json:"throttle,omitempty"`
 			} `json:"frequency,omitempty"`
-			Group                   *string         `json:"group,omitempty"`
-			Id                      string          `json:"id"` //nolint:revive // var-naming: API struct field
-			Params                  *map[string]any `json:"params,omitempty"`
-			UseAlertDataForTemplate *bool           `json:"use_alert_data_for_template,omitempty"`
-			Uuid                    *string         `json:"uuid,omitempty"` //nolint:revive // var-naming: API struct field
+			Group                   *string          `json:"group,omitempty"`
+			Id                      string           `json:"id"` //nolint:revive // var-naming: API struct field
+			Params                  *map[string]*any `json:"params,omitempty"`
+			UseAlertDataForTemplate *bool            `json:"use_alert_data_for_template,omitempty"`
+			Uuid                    *string          `json:"uuid,omitempty"` //nolint:revive // var-naming: API struct field
 		}, len(rule.Actions))
 
 		for i, action := range rule.Actions {
 			actions[i].Group = &action.Group
 			actions[i].Id = action.ID
 			if action.Params != nil {
-				actions[i].Params = &action.Params
+				params := typeutils.PointerInterfaceMapFromAnyMap(action.Params)
+				actions[i].Params = &params
 			}
 
 			if action.Frequency != nil {
@@ -658,8 +667,8 @@ func buildUpdateRequestBody(rule models.AlertingRule) kbapi.PutAlertingRuleIdJSO
 							State *struct {
 								Store kbapi.PutAlertingRuleIdJSONBodyActionsAlertsFilterQueryFiltersStateStore `json:"store"`
 							} `json:"$state,omitempty"`
-							Meta  map[string]any  `json:"meta"`
-							Query *map[string]any `json:"query,omitempty"`
+							Meta  map[string]*any  `json:"meta"`
+							Query *map[string]*any `json:"query,omitempty"`
 						} `json:"filters"`
 						Kql string `json:"kql"`
 					} `json:"query,omitempty"`
@@ -680,8 +689,8 @@ func buildUpdateRequestBody(rule models.AlertingRule) kbapi.PutAlertingRuleIdJSO
 							State *struct {
 								Store kbapi.PutAlertingRuleIdJSONBodyActionsAlertsFilterQueryFiltersStateStore `json:"store"`
 							} `json:"$state,omitempty"`
-							Meta  map[string]any  `json:"meta"`
-							Query *map[string]any `json:"query,omitempty"`
+							Meta  map[string]*any  `json:"meta"`
+							Query *map[string]*any `json:"query,omitempty"`
 						} `json:"filters"`
 						Kql string `json:"kql"`
 					}{
@@ -690,8 +699,8 @@ func buildUpdateRequestBody(rule models.AlertingRule) kbapi.PutAlertingRuleIdJSO
 							State *struct {
 								Store kbapi.PutAlertingRuleIdJSONBodyActionsAlertsFilterQueryFiltersStateStore `json:"store"`
 							} `json:"$state,omitempty"`
-							Meta  map[string]any  `json:"meta"`
-							Query *map[string]any `json:"query,omitempty"`
+							Meta  map[string]*any  `json:"meta"`
+							Query *map[string]*any `json:"query,omitempty"`
 						}{},
 					}
 				}

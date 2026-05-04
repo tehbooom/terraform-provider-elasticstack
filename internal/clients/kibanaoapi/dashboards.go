@@ -19,38 +19,18 @@ package kibanaoapi
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 
 	"github.com/elastic/terraform-provider-elasticstack/generated/kbapi"
+	"github.com/elastic/terraform-provider-elasticstack/internal/clients/kibanautil"
 	"github.com/elastic/terraform-provider-elasticstack/internal/diagutil"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 )
 
-// buildSpaceAwarePath constructs an API path with space awareness.
-// If spaceID is empty or "default", returns the basePath unchanged.
-// Otherwise, prepends "/s/{spaceID}" to the basePath.
-func buildSpaceAwarePath(spaceID, basePath string) string {
-	if spaceID != "" && spaceID != "default" {
-		return fmt.Sprintf("/s/%s%s", spaceID, basePath)
-	}
-	return basePath
-}
-
-// spaceAwarePathRequestEditor returns a RequestEditorFn that modifies the request path for space awareness.
-func spaceAwarePathRequestEditor(spaceID string) func(ctx context.Context, req *http.Request) error {
+// The Dashboard API currently requires allowUnmappedKeys for these requests.
+func addDashboardRequestShapeEditor() func(ctx context.Context, req *http.Request) error {
 	return func(_ context.Context, req *http.Request) error {
-		req.URL.Path = buildSpaceAwarePath(spaceID, req.URL.Path)
-		return nil
-	}
-}
-
-// These headers and query parameters appear to be required by the Dashboard API at the moment.
-func addAPIVersionQueryParamRequestEditor() func(ctx context.Context, req *http.Request) error {
-	return func(_ context.Context, req *http.Request) error {
-		req.Header.Add("x-elastic-internal-origin", "Kibana")
 		query := req.URL.Query()
-		query.Add("apiVersion", "1")
 		query.Add("allowUnmappedKeys", "true")
 		req.URL.RawQuery = query.Encode()
 		return nil
@@ -61,8 +41,8 @@ func addAPIVersionQueryParamRequestEditor() func(ctx context.Context, req *http.
 func GetDashboard(ctx context.Context, client *Client, spaceID string, dashboardID string) (*kbapi.GetDashboardsIdResponse, diag.Diagnostics) {
 	resp, err := client.API.GetDashboardsIdWithResponse(
 		ctx, dashboardID,
-		spaceAwarePathRequestEditor(spaceID),
-		addAPIVersionQueryParamRequestEditor(),
+		kibanautil.SpaceAwarePathRequestEditor(spaceID),
+		addDashboardRequestShapeEditor(),
 	)
 	if err != nil {
 		return nil, diagutil.FrameworkDiagFromError(err)
@@ -79,12 +59,11 @@ func GetDashboard(ctx context.Context, client *Client, spaceID string, dashboard
 }
 
 // CreateDashboard creates a new dashboard.
-func CreateDashboard(ctx context.Context, client *Client, spaceID string, dashboardID string, req kbapi.PostDashboardsIdJSONRequestBody) (*kbapi.PostDashboardsIdResponse, diag.Diagnostics) {
-	resp, err := client.API.PostDashboardsIdWithResponse(
-		ctx, dashboardID,
-		req,
-		spaceAwarePathRequestEditor(spaceID),
-		addAPIVersionQueryParamRequestEditor(),
+func CreateDashboard(ctx context.Context, client *Client, spaceID string, req kbapi.PostDashboardsJSONRequestBody) (*kbapi.PostDashboardsResponse, diag.Diagnostics) {
+	resp, err := client.API.PostDashboardsWithResponse(
+		ctx, req,
+		kibanautil.SpaceAwarePathRequestEditor(spaceID),
+		addDashboardRequestShapeEditor(),
 	)
 	if err != nil {
 		return nil, diagutil.FrameworkDiagFromError(err)
@@ -101,9 +80,9 @@ func CreateDashboard(ctx context.Context, client *Client, spaceID string, dashbo
 // UpdateDashboard updates an existing dashboard.
 func UpdateDashboard(ctx context.Context, client *Client, spaceID string, dashboardID string, req kbapi.PutDashboardsIdJSONRequestBody) (*kbapi.PutDashboardsIdResponse, diag.Diagnostics) {
 	resp, err := client.API.PutDashboardsIdWithResponse(
-		ctx, dashboardID, &kbapi.PutDashboardsIdParams{}, req,
-		spaceAwarePathRequestEditor(spaceID),
-		addAPIVersionQueryParamRequestEditor(),
+		ctx, dashboardID, req,
+		kibanautil.SpaceAwarePathRequestEditor(spaceID),
+		addDashboardRequestShapeEditor(),
 	)
 	if err != nil {
 		return nil, diagutil.FrameworkDiagFromError(err)
@@ -121,8 +100,8 @@ func UpdateDashboard(ctx context.Context, client *Client, spaceID string, dashbo
 func DeleteDashboard(ctx context.Context, client *Client, spaceID string, dashboardID string) diag.Diagnostics {
 	resp, err := client.API.DeleteDashboardsIdWithResponse(
 		ctx, dashboardID,
-		spaceAwarePathRequestEditor(spaceID),
-		addAPIVersionQueryParamRequestEditor(),
+		kibanautil.SpaceAwarePathRequestEditor(spaceID),
+		addDashboardRequestShapeEditor(),
 	)
 	if err != nil {
 		return diagutil.FrameworkDiagFromError(err)
