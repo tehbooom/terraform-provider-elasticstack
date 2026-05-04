@@ -18,6 +18,7 @@
 package cluster_test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -190,17 +191,19 @@ func checkRepoDestroy(name string) func(s *terraform.State) error {
 				continue
 			}
 
-			esClient, err := client.GetESClient()
+			typedClient, err := client.GetESTypedClient()
 			if err != nil {
 				return err
 			}
-			req := esClient.Snapshot.GetRepository.WithRepository(compID.ResourceID)
-			res, err := esClient.Snapshot.GetRepository(req)
+			res, err := typedClient.Snapshot.GetRepository().Repository(compID.ResourceID).Do(context.Background())
 			if err != nil {
+				if acctest.IsNotFoundElasticsearchError(err) {
+					continue
+				}
 				return err
 			}
 
-			if res.StatusCode != 404 {
+			if _, ok := res[compID.ResourceID]; ok {
 				return fmt.Errorf("Snapshot repository (%s) still exists", compID.ResourceID)
 			}
 		}
