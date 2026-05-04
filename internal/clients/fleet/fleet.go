@@ -723,6 +723,70 @@ func GetPackages(ctx context.Context, client *Client, prerelease bool, spaceID s
 	}
 }
 
+// GetProxy reads a specific Fleet proxy from the API. Returns (nil, nil) on HTTP 404.
+func GetProxy(ctx context.Context, client *Client, spaceID, proxyID string) (*kbapi.FleetProxyItem, diag.Diagnostics) {
+	resp, err := client.API.GetFleetProxiesItemidWithResponse(ctx, proxyID, kibanautil.SpaceAwarePathRequestEditor(spaceID))
+	if err != nil {
+		return nil, diagutil.FrameworkDiagFromError(err)
+	}
+
+	switch resp.StatusCode() {
+	case http.StatusOK:
+		return &resp.JSON200.Item, nil
+	case http.StatusNotFound:
+		return nil, nil
+	default:
+		return nil, reportUnknownError(resp.StatusCode(), resp.Body)
+	}
+}
+
+// CreateProxy creates a new Fleet proxy.
+func CreateProxy(ctx context.Context, client *Client, spaceID string, body kbapi.PostFleetProxiesJSONRequestBody) (*kbapi.FleetProxyItem, diag.Diagnostics) {
+	resp, err := client.API.PostFleetProxiesWithResponse(ctx, body, kibanautil.SpaceAwarePathRequestEditor(spaceID))
+	if err != nil {
+		return nil, diagutil.FrameworkDiagFromError(err)
+	}
+
+	switch resp.StatusCode() {
+	case http.StatusOK:
+		return &resp.JSON200.Item, nil
+	default:
+		return nil, reportUnknownError(resp.StatusCode(), resp.Body)
+	}
+}
+
+// UpdateProxy updates an existing Fleet proxy.
+func UpdateProxy(ctx context.Context, client *Client, spaceID, proxyID string, body kbapi.PutFleetProxiesItemidJSONRequestBody) (*kbapi.FleetProxyItem, diag.Diagnostics) {
+	resp, err := client.API.PutFleetProxiesItemidWithResponse(ctx, proxyID, body, kibanautil.SpaceAwarePathRequestEditor(spaceID))
+	if err != nil {
+		return nil, diagutil.FrameworkDiagFromError(err)
+	}
+
+	switch resp.StatusCode() {
+	case http.StatusOK:
+		return &resp.JSON200.Item, nil
+	default:
+		return nil, reportUnknownError(resp.StatusCode(), resp.Body)
+	}
+}
+
+// DeleteProxy deletes an existing Fleet proxy.
+func DeleteProxy(ctx context.Context, client *Client, spaceID, proxyID string) diag.Diagnostics {
+	resp, err := client.API.DeleteFleetProxiesItemidWithResponse(ctx, proxyID, kibanautil.SpaceAwarePathRequestEditor(spaceID))
+	if err != nil {
+		return diagutil.FrameworkDiagFromError(err)
+	}
+
+	switch resp.StatusCode() {
+	case http.StatusOK:
+		return nil
+	case http.StatusNotFound:
+		return nil
+	default:
+		return reportUnknownError(resp.StatusCode(), resp.Body)
+	}
+}
+
 // UploadPackageOptions holds the options for uploading a custom integration package.
 type UploadPackageOptions struct {
 	// PackagePath is the path to the package archive to upload (.zip or .tar.gz/.tgz).

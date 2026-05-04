@@ -1240,6 +1240,45 @@ func transformFleetPaths(schema *Schema) {
 	hostPath.Get.CreateRef(schema, "server_host", "responses.200.content.application/json.schema.properties.item")
 	hostPath.Put.CreateRef(schema, "server_host", "responses.200.content.application/json.schema.properties.item")
 
+	// Proxies
+	// https://github.com/elastic/kibana/blob/main/x-pack/plugins/fleet/common/types/models/fleet_proxy.ts
+	// https://github.com/elastic/kibana/blob/main/x-pack/plugins/fleet/common/types/rest_spec/fleet_proxies.ts
+
+	proxiesPath := schema.MustGetPath("/api/fleet/proxies")
+	proxyPath := schema.MustGetPath("/api/fleet/proxies/{itemId}")
+
+	// Lift the response item into a reusable named component (mirrors
+	// server_host above). This gives us a single FleetProxyItem Go type
+	// instead of one anonymous struct per endpoint.
+	proxiesPath.Get.CreateRef(schema, "fleet_proxy_item", "responses.200.content.application/json.schema.properties.items.items")
+	proxiesPath.Post.CreateRef(schema, "fleet_proxy_item", "responses.200.content.application/json.schema.properties.item")
+	proxyPath.Get.CreateRef(schema, "fleet_proxy_item", "responses.200.content.application/json.schema.properties.item")
+	proxyPath.Put.CreateRef(schema, "fleet_proxy_item", "responses.200.content.application/json.schema.properties.item")
+
+	// proxy_headers values are a string|boolean|number union. oapi-codegen
+	// only emits the typed AsX/FromX/MergeX/Marshal/Unmarshal helpers on a
+	// union when each anyOf branch is itself a $ref to a named component;
+	// when the branches are primitive inline types it emits an unusable
+	// struct with an unexported `union json.RawMessage` field. Define
+	// trivial named components for each primitive branch and a
+	// fleet_proxy_header_value union that refs them, then point every
+	// proxy_headers.additionalProperties at that union.
+	schema.Components.Set("schemas.fleet_proxy_header_value_string", Map{"type": "string"})
+	schema.Components.Set("schemas.fleet_proxy_header_value_boolean", Map{"type": "boolean"})
+	schema.Components.Set("schemas.fleet_proxy_header_value_number", Map{"type": "number"})
+	schema.Components.Set("schemas.fleet_proxy_header_value", Map{
+		"anyOf": Slice{
+			Map{"$ref": "#/components/schemas/fleet_proxy_header_value_string"},
+			Map{"$ref": "#/components/schemas/fleet_proxy_header_value_boolean"},
+			Map{"$ref": "#/components/schemas/fleet_proxy_header_value_number"},
+		},
+	})
+
+	headerValueRef := Map{"$ref": "#/components/schemas/fleet_proxy_header_value"}
+	schema.Components.Set("schemas.fleet_proxy_item.properties.proxy_headers.additionalProperties", headerValueRef)
+	proxiesPath.Post.Set("requestBody.content.application/json.schema.properties.proxy_headers.additionalProperties", headerValueRef)
+	proxyPath.Put.Set("requestBody.content.application/json.schema.properties.proxy_headers.additionalProperties", headerValueRef)
+
 	// Outputs
 	// https://github.com/elastic/kibana/blob/main/x-pack/plugins/fleet/common/types/models/output.ts
 	// https://github.com/elastic/kibana/blob/main/x-pack/plugins/fleet/common/types/rest_spec/output.ts

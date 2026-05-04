@@ -55,6 +55,7 @@ import (
 	"github.com/elastic/terraform-provider-elasticstack/internal/fleet/integrationds"
 	"github.com/elastic/terraform-provider-elasticstack/internal/fleet/output"
 	"github.com/elastic/terraform-provider-elasticstack/internal/fleet/outputds"
+	"github.com/elastic/terraform-provider-elasticstack/internal/fleet/proxy"
 	"github.com/elastic/terraform-provider-elasticstack/internal/fleet/serverhost"
 	"github.com/elastic/terraform-provider-elasticstack/internal/kibana/agentbuilderagent"
 	"github.com/elastic/terraform-provider-elasticstack/internal/kibana/agentbuildertool"
@@ -190,6 +191,7 @@ func (p *Provider) resources(_ context.Context) []func() resource.Resource {
 		output.NewResource,
 		agentdownloadsource.NewResource,
 		serverhost.NewResource,
+		proxy.NewResource,
 		systemuser.NewSystemUserResource,
 		securityuser.NewUserResource,
 		role.NewRoleResource,
