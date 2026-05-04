@@ -145,11 +145,19 @@ func (r integrationResource) create(ctx context.Context, plan tfsdk.Plan, state 
 	planModel.ID = types.StringValue(getPackageID(name, version))
 
 	if planModel.SpaceID.IsUnknown() {
-		planModel.SpaceID = types.StringNull()
+		planModel.SpaceID = installedKibanaSpaceID(pkg)
 	}
 
 	diags = state.Set(ctx, planModel)
 	respDiags.Append(diags...)
+}
+
+func installedKibanaSpaceID(pkg *kbapi.PackageInfo) types.String {
+	if pkg == nil || pkg.InstallationInfo == nil {
+		return types.StringNull()
+	}
+
+	return typeutils.StringishPointerValue(pkg.InstallationInfo.InstalledKibanaSpaceId)
 }
 
 func installInSpace(ctx context.Context, client clients.MinVersionEnforceable, fleetClient *fleet.Client, name, version, spaceID string, force bool) diag.Diagnostics {
