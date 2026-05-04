@@ -1,4 +1,7 @@
-## ADDED Requirements
+## Purpose
+Migrate ML helper functions and resources to use the Elasticsearch typed client (`GetESTypedClient()`) instead of raw `esapi` methods, remove redundant custom model structs, and ensure the project builds and lints successfully.
+
+## Requirements
 
 ### Requirement: ML helper functions use typed client
 All functions in `internal/clients/elasticsearch/ml_job.go` SHALL use `GetESTypedClient()` and SHALL call the corresponding typed API methods instead of raw `esapi` methods.
