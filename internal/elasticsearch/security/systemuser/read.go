@@ -19,50 +19,49 @@ package systemuser
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
+	estypes "github.com/elastic/go-elasticsearch/v8/typedapi/types"
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients/elasticsearch"
 	"github.com/elastic/terraform-provider-elasticstack/internal/diagutil"
-	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
-func (r *systemUserResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
-	var data Data
-	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
-	if resp.Diagnostics.HasError() {
-		return
+func isSystemUser(user *estypes.User) bool {
+	if user == nil || user.Metadata == nil {
+		return false
+	}
+	raw, ok := user.Metadata["_reserved"]
+	if !ok {
+		return false
+	}
+	var reserved bool
+	if err := json.Unmarshal(raw, &reserved); err != nil {
+		return false
+	}
+	return reserved
+}
+
+func readSystemUser(ctx context.Context, client *clients.ElasticsearchScopedClient, resourceID string, state Data) (Data, bool, diag.Diagnostics) {
+	var diags diag.Diagnostics
+
+	user, sdkDiags := elasticsearch.GetUser(ctx, client, resourceID)
+	diags.Append(diagutil.FrameworkDiagsFromSDK(sdkDiags)...)
+	if diags.HasError() {
+		return state, false, diags
 	}
 
-	compID, diags := clients.CompositeIDFromStrFw(data.ID.ValueString())
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	usernameID := compID.ResourceID
-
-	client, diags := r.Client().GetElasticsearchClient(ctx, data.ElasticsearchConnection)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
+	if user == nil || !isSystemUser(user) {
+		tflog.Warn(ctx, fmt.Sprintf(`System user "%s" not found, removing from state`, resourceID))
+		return state, false, nil
 	}
 
-	user, sdkDiags := elasticsearch.GetUser(ctx, client, usernameID)
-	resp.Diagnostics.Append(diagutil.FrameworkDiagsFromSDK(sdkDiags)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
+	state.Username = types.StringValue(resourceID)
+	state.Enabled = types.BoolValue(user.Enabled)
 
-	if user == nil || !user.IsSystemUser() {
-		tflog.Warn(ctx, fmt.Sprintf(`System user "%s" not found, removing from state`, compID.ResourceID))
-		resp.State.RemoveResource(ctx)
-		return
-	}
-
-	data.Username = types.StringValue(usernameID)
-	data.Enabled = types.BoolValue(user.Enabled)
-
-	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	return state, true, diags
 }

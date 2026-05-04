@@ -612,8 +612,11 @@ func InstallPackage(ctx context.Context, client *Client, name, version string, o
 }
 
 // Uninstall uninstalls a package.
-func Uninstall(ctx context.Context, client *Client, name, version string, spaceID string, _ bool) diag.Diagnostics {
-	resp, err := client.API.DeleteFleetEpmPackagesPkgnamePkgversionWithResponse(ctx, name, version, nil, kibanautil.SpaceAwarePathRequestEditor(spaceID))
+func Uninstall(ctx context.Context, client *Client, name, version string, spaceID string, force bool) diag.Diagnostics {
+	params := kbapi.DeleteFleetEpmPackagesPkgnamePkgversionParams{
+		Force: &force,
+	}
+	resp, err := client.API.DeleteFleetEpmPackagesPkgnamePkgversionWithResponse(ctx, name, version, &params, kibanautil.SpaceAwarePathRequestEditor(spaceID))
 	if err != nil {
 		return diagutil.FrameworkDiagFromError(err)
 	}
@@ -627,6 +630,56 @@ func Uninstall(ctx context.Context, client *Client, name, version string, spaceI
 			return nil
 		}
 		return reportUnknownError(resp.StatusCode(), resp.Body)
+	case http.StatusNotFound:
+		return nil
+	default:
+		return reportUnknownError(resp.StatusCode(), resp.Body)
+	}
+}
+
+// InstallKibanaAssets installs Kibana assets for an already-installed package into a specific space.
+func InstallKibanaAssets(ctx context.Context, client *Client, name, version string, spaceID string, force bool) diag.Diagnostics {
+	spaceIDs := []string{spaceID}
+	body := kbapi.PostFleetEpmPackagesPkgnamePkgversionKibanaAssetsJSONRequestBody{
+		Force:    &force,
+		SpaceIds: &spaceIDs,
+	}
+
+	resp, err := client.API.PostFleetEpmPackagesPkgnamePkgversionKibanaAssetsWithResponse(ctx, name, version, body, kibanautil.SpaceAwarePathRequestEditor(spaceID))
+	if err != nil {
+		return diagutil.FrameworkDiagFromError(err)
+	}
+
+	switch resp.StatusCode() {
+	case http.StatusOK:
+		return nil
+	default:
+		return reportUnknownError(resp.StatusCode(), resp.Body)
+	}
+}
+
+// forceQueryParamEditor returns a RequestEditorFn that appends ?force=<bool> to
+// the request URL. Used for generated endpoints that do not expose a typed force
+// parameter (e.g. the kibana_assets DELETE endpoint).
+func forceQueryParamEditor(force bool) kbapi.RequestEditorFn {
+	return func(_ context.Context, req *http.Request) error {
+		q := req.URL.Query()
+		q.Set("force", strconv.FormatBool(force))
+		req.URL.RawQuery = q.Encode()
+		return nil
+	}
+}
+
+// DeleteKibanaAssets removes Kibana assets for a package from a specific space.
+func DeleteKibanaAssets(ctx context.Context, client *Client, name, version string, spaceID string, force bool) diag.Diagnostics {
+	resp, err := client.API.DeleteFleetEpmPackagesPkgnamePkgversionKibanaAssetsWithResponse(ctx, name, version, kibanautil.SpaceAwarePathRequestEditor(spaceID), forceQueryParamEditor(force))
+	if err != nil {
+		return diagutil.FrameworkDiagFromError(err)
+	}
+
+	switch resp.StatusCode() {
+	case http.StatusOK:
+		return nil
 	case http.StatusNotFound:
 		return nil
 	default:
@@ -667,6 +720,70 @@ func GetPackages(ctx context.Context, client *Client, prerelease bool, spaceID s
 		return nil, reportUnknownError(resp.StatusCode(), resp.Body)
 	default:
 		return nil, reportUnknownError(resp.StatusCode(), resp.Body)
+	}
+}
+
+// GetProxy reads a specific Fleet proxy from the API. Returns (nil, nil) on HTTP 404.
+func GetProxy(ctx context.Context, client *Client, spaceID, proxyID string) (*kbapi.FleetProxyItem, diag.Diagnostics) {
+	resp, err := client.API.GetFleetProxiesItemidWithResponse(ctx, proxyID, kibanautil.SpaceAwarePathRequestEditor(spaceID))
+	if err != nil {
+		return nil, diagutil.FrameworkDiagFromError(err)
+	}
+
+	switch resp.StatusCode() {
+	case http.StatusOK:
+		return &resp.JSON200.Item, nil
+	case http.StatusNotFound:
+		return nil, nil
+	default:
+		return nil, reportUnknownError(resp.StatusCode(), resp.Body)
+	}
+}
+
+// CreateProxy creates a new Fleet proxy.
+func CreateProxy(ctx context.Context, client *Client, spaceID string, body kbapi.PostFleetProxiesJSONRequestBody) (*kbapi.FleetProxyItem, diag.Diagnostics) {
+	resp, err := client.API.PostFleetProxiesWithResponse(ctx, body, kibanautil.SpaceAwarePathRequestEditor(spaceID))
+	if err != nil {
+		return nil, diagutil.FrameworkDiagFromError(err)
+	}
+
+	switch resp.StatusCode() {
+	case http.StatusOK:
+		return &resp.JSON200.Item, nil
+	default:
+		return nil, reportUnknownError(resp.StatusCode(), resp.Body)
+	}
+}
+
+// UpdateProxy updates an existing Fleet proxy.
+func UpdateProxy(ctx context.Context, client *Client, spaceID, proxyID string, body kbapi.PutFleetProxiesItemidJSONRequestBody) (*kbapi.FleetProxyItem, diag.Diagnostics) {
+	resp, err := client.API.PutFleetProxiesItemidWithResponse(ctx, proxyID, body, kibanautil.SpaceAwarePathRequestEditor(spaceID))
+	if err != nil {
+		return nil, diagutil.FrameworkDiagFromError(err)
+	}
+
+	switch resp.StatusCode() {
+	case http.StatusOK:
+		return &resp.JSON200.Item, nil
+	default:
+		return nil, reportUnknownError(resp.StatusCode(), resp.Body)
+	}
+}
+
+// DeleteProxy deletes an existing Fleet proxy.
+func DeleteProxy(ctx context.Context, client *Client, spaceID, proxyID string) diag.Diagnostics {
+	resp, err := client.API.DeleteFleetProxiesItemidWithResponse(ctx, proxyID, kibanautil.SpaceAwarePathRequestEditor(spaceID))
+	if err != nil {
+		return diagutil.FrameworkDiagFromError(err)
+	}
+
+	switch resp.StatusCode() {
+	case http.StatusOK:
+		return nil
+	case http.StatusNotFound:
+		return nil
+	default:
+		return reportUnknownError(resp.StatusCode(), resp.Body)
 	}
 }
 

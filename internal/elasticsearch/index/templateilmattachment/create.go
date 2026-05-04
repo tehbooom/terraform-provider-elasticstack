@@ -71,11 +71,13 @@ func (r *Resource) Create(ctx context.Context, req resource.CreateRequest, resp 
 	plan.ID = types.StringValue(id.String())
 
 	// Read existing component template (if any) to preserve other settings
-	existing, sdkDiags := elasticsearch.GetComponentTemplate(ctx, client, componentTemplateName, true)
+	existingRaw, sdkDiags := elasticsearch.GetComponentTemplate(ctx, client, componentTemplateName)
 	if sdkDiags.HasError() {
 		resp.Diagnostics.Append(diagutil.FrameworkDiagsFromSDK(sdkDiags)...)
 		return
 	}
+
+	existing := toModelComponentTemplateResponse(existingRaw)
 
 	// Build component template, preserving existing content if any
 	var componentTemplate models.ComponentTemplate

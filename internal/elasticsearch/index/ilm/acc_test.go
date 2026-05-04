@@ -18,6 +18,7 @@
 package ilm_test
 
 import (
+	"context"
 	_ "embed"
 	"fmt"
 	"os"
@@ -35,7 +36,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
-var totalShardsPerNodeVersionLimit = version.Must(version.NewVersion("7.16.0"))
 var downsampleNoTimeoutVersionLimit = version.Must(version.NewVersion("8.5.0"))
 var downsampleVersionLimit = version.Must(version.NewVersion("8.10.0"))
 var allowWriteAfterShrinkVersionLimit = version.Must(version.NewVersion("8.14.0"))
@@ -108,7 +108,6 @@ func TestAccResourceILM(t *testing.T) {
 			},
 			{
 				ProtoV6ProviderFactories: acctest.Providers,
-				SkipFunc:                 versionutils.CheckIfVersionIsUnsupported(totalShardsPerNodeVersionLimit),
 				ConfigDirectory:          acctest.NamedTestCaseDirectory("total_shards_per_node"),
 				ConfigVariables: config.Variables{
 					"policy_name": config.StringVariable(policyName),
@@ -250,19 +249,18 @@ func checkResourceILMDestroy(s *terraform.State) error {
 		}
 		compID, _ := clients.CompositeIDFromStr(rs.Primary.ID)
 
-		esClient, err := client.GetESClient()
+		typedClient, err := client.GetESTypedClient()
 		if err != nil {
 			return err
 		}
-		req := esClient.ILM.GetLifecycle.WithPolicy(compID.ResourceID)
-		res, err := esClient.ILM.GetLifecycle(req)
+		_, err = typedClient.Ilm.GetLifecycle().Policy(compID.ResourceID).Do(context.Background())
 		if err != nil {
+			if acctest.IsNotFoundElasticsearchError(err) {
+				continue
+			}
 			return err
 		}
-
-		if res.StatusCode != 404 {
-			return fmt.Errorf("ILM policy (%s) still exists", compID.ResourceID)
-		}
+		return fmt.Errorf("ILM policy (%s) still exists", compID.ResourceID)
 	}
 	return nil
 }

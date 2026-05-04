@@ -49,11 +49,13 @@ func (r *Resource) Delete(ctx context.Context, req resource.DeleteRequest, resp 
 	componentTemplateName := compID.ResourceID
 
 	// Read existing component template
-	existing, sdkDiags := elasticsearch.GetComponentTemplate(ctx, client, componentTemplateName, true)
+	existingRaw, sdkDiags := elasticsearch.GetComponentTemplate(ctx, client, componentTemplateName)
 	if sdkDiags.HasError() {
 		resp.Diagnostics.Append(diagutil.FrameworkDiagsFromSDK(sdkDiags)...)
 		return
 	}
+
+	existing := toModelComponentTemplateResponse(existingRaw)
 
 	if existing == nil {
 		// Already gone

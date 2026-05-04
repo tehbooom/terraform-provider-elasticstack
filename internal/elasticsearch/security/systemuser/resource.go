@@ -18,26 +18,40 @@
 package systemuser
 
 import (
+	"context"
+
 	"github.com/elastic/terraform-provider-elasticstack/internal/entitycore"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 )
 
 // Ensure provider defined types fully satisfy framework interfaces
 var (
-	_ resource.Resource              = newSystemUserResource()
-	_ resource.ResourceWithConfigure = newSystemUserResource()
+	_ resource.Resource                = newSystemUserResource()
+	_ resource.ResourceWithConfigure   = newSystemUserResource()
+	_ resource.ResourceWithImportState = newSystemUserResource()
 )
 
 type systemUserResource struct {
-	*entitycore.ResourceBase
+	*entitycore.ElasticsearchResource[Data]
 }
 
 func newSystemUserResource() *systemUserResource {
 	return &systemUserResource{
-		ResourceBase: entitycore.NewResourceBase(entitycore.ComponentElasticsearch, "security_system_user"),
+		ElasticsearchResource: entitycore.NewElasticsearchResource[Data](
+			entitycore.ComponentElasticsearch,
+			"security_system_user",
+			GetSchema,
+			readSystemUser,
+			deleteSystemUser,
+		),
 	}
 }
 
 func NewSystemUserResource() resource.Resource {
 	return newSystemUserResource()
+}
+
+func (r *systemUserResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }

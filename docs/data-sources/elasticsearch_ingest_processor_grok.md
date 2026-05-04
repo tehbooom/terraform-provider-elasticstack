@@ -52,14 +52,14 @@ resource "elasticstack_elasticsearch_ingest_pipeline" "my_ingest_pipeline" {
 ### Optional
 
 - `description` (String) Description of the processor.
-- `ecs_compatibility` (String) Must be disabled or v1. If v1, the processor uses patterns with Elastic Common Schema (ECS) field names. **NOTE:** Supported only starting from version of Elasticsearch **7.16.x**.
+- `ecs_compatibility` (String) Must be disabled or v1. If v1, the processor uses patterns with Elastic Common Schema (ECS) field names.
 - `if` (String) Conditionally execute the processor
 - `ignore_failure` (Boolean) Ignore failures for the processor.
 - `ignore_missing` (Boolean) If `true` and `field` does not exist or is `null`, the processor quietly exits without modifying the document
 - `on_failure` (List of String) Handle failures for the processor.
 - `pattern_definitions` (Map of String) A map of pattern-name and pattern tuples defining custom patterns to be used by the current processor. Patterns matching existing names will override the pre-existing definition.
 - `tag` (String) Identifier for the processor.
-- `trace_match` (Boolean) when true, `_ingest._grok_match_index` will be inserted into your matched document’s metadata with the index into the pattern found in `patterns` that matched.
+- `trace_match` (Boolean) when true, `_ingest._grok_match_index` will be inserted into your matched document's metadata with the index into the pattern found in `patterns` that matched.
 
 ### Read-Only
 

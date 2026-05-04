@@ -148,9 +148,7 @@ data "elasticstack_elasticsearch_snapshot_repository" "example" {
   }
 }
 ```
-
 ## Requirements
-
 ### Requirement: Snapshot repository CRUD APIs (REQ-001–REQ-004)
 
 The resource SHALL use the Elasticsearch Create or Update Snapshot Repository API (`PUT /_snapshot/<repository>`) to create and update snapshot repositories ([docs](https://www.elastic.co/guide/en/elasticsearch/reference/current/put-snapshot-repo-api.html)). The resource SHALL use the Elasticsearch Get Snapshot Repository API (`GET /_snapshot/<repository>`) to read snapshot repositories ([docs](https://www.elastic.co/guide/en/elasticsearch/reference/current/get-snapshot-repo-api.html)). The resource SHALL use the Elasticsearch Delete Snapshot Repository API (`DELETE /_snapshot/<repository>`) to delete snapshot repositories ([docs](https://www.elastic.co/guide/en/elasticsearch/reference/current/delete-snapshot-repo-api.html)). When Elasticsearch returns a non-success status for any create, update, read, or delete request (other than 404 on read), the resource SHALL surface the API error to Terraform diagnostics.
@@ -297,11 +295,17 @@ When `verify` is set to `true` (the default), the resource SHALL include `verify
 
 ---
 
-## Data source requirements
+**Data source requirements:**
 
 ### Requirement: Data source read-only semantics (REQ-DS-001)
 
 The data source SHALL support only a read operation. It SHALL NOT perform create, update, or delete operations.
+
+#### Scenario: Read-only data source
+
+- GIVEN the data source is configured
+- WHEN Terraform evaluates the data source
+- THEN the provider SHALL only read the repository and SHALL NOT create, update, or delete it
 
 ### Requirement: Data source API (REQ-DS-002)
 
@@ -317,9 +321,21 @@ The data source SHALL use the Elasticsearch Get Snapshot Repository API (`GET /_
 
 The data source SHALL set `id` in the format `<cluster_uuid>/<repository_name>` by calling `client.ID(ctx, repoName)` after resolving the client. The `id` SHALL be set regardless of whether the repository was found.
 
+#### Scenario: Data source id set
+
+- GIVEN the data source read runs for a repository name
+- WHEN the provider resolves the Elasticsearch client
+- THEN `id` SHALL be set to `<cluster_uuid>/<repository_name>`
+
 ### Requirement: Data source connection (REQ-DS-004)
 
 The data source SHALL resolve a `*clients.ElasticsearchScopedClient` from the provider client factory and call `GetESClient()` to perform Elasticsearch operations. When `elasticsearch_connection` is absent, the factory SHALL return a typed client built from provider-level defaults. When `elasticsearch_connection` is configured, the factory SHALL return a typed scoped client rebuilt from that connection.
+
+#### Scenario: Data source-scoped connection
+
+- GIVEN `elasticsearch_connection` is configured on the data source
+- WHEN the data source reads the repository
+- THEN the provider SHALL use the typed scoped client rebuilt from that connection
 
 ### Requirement: Data source type block population (REQ-DS-005)
 
@@ -340,3 +356,24 @@ All attributes in the data source schema except `name` SHALL be computed. The `n
 - GIVEN no `name` is provided in the data source configuration
 - WHEN Terraform validates the configuration
 - THEN a validation error SHALL be returned
+
+### Requirement: Typed client implementation for snapshot repository CRUD
+The resource and data source SHALL use the go-elasticsearch Typed API for all snapshot repository operations. `GetSnapshotRepository` SHALL use `Snapshot.GetRepository().Do(ctx)`, `PutSnapshotRepository` SHALL use `Snapshot.CreateRepository().Do(ctx)`, and `DeleteSnapshotRepository` SHALL use `Snapshot.DeleteRepository().Do(ctx)`. Manual JSON marshaling and unmarshaling SHALL be eliminated.
+
+#### Scenario: Typed API read with union type handling
+- GIVEN a successful Get Snapshot Repository API response
+- WHEN the provider processes the response
+- THEN the typed API response (`getrepository.Response`) SHALL be type-switched over `types.Repository` union variants
+- AND each known repository type (`fs`, `url`, `gcs`, `azure`, `s3`, `hdfs`, `source`) SHALL be mapped to its corresponding schema block
+
+#### Scenario: Unknown repository type error
+- GIVEN the API returns a repository type not covered by the `types.Repository` union handling
+- WHEN read runs
+- THEN the provider SHALL return an error diagnostic and SHALL NOT panic
+
+#### Scenario: Typed API write without manual marshal
+- GIVEN a snapshot repository to create or update
+- WHEN the provider calls the Put API
+- THEN the request body SHALL be constructed using typed API request builders
+- AND manual `json.Marshal` into an intermediate `models.SnapshotRepository` SHALL NOT occur
+

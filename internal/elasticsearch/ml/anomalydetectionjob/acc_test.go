@@ -20,6 +20,8 @@ package anomalydetectionjob_test
 import (
 	_ "embed"
 	"fmt"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/elastic/terraform-provider-elasticstack/internal/acctest"
@@ -108,19 +110,26 @@ func TestAccResourceAnomalyDetectionJobComprehensive(t *testing.T) {
 					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "groups.#", "2"),
 					// Analysis config checks
 					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "analysis_config.bucket_span", "10m"),
+					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "analysis_config.latency", "30s"),
+					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "analysis_config.summary_count_field_name", "event_count"),
 					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "analysis_config.detectors.#", "2"),
 					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "analysis_config.detectors.0.function", "count"),
+					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "analysis_config.detectors.0.partition_field_name", "host"),
 					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "analysis_config.detectors.1.function", "mean"),
 					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "analysis_config.detectors.1.field_name", "response_time"),
+					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "analysis_config.detectors.1.by_field_name", "status"),
+					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "analysis_config.detectors.1.over_field_name", "clientip"),
 					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "analysis_config.influencers.#", "1"),
 					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "analysis_config.influencers.0", "status_code"),
 					// Analysis limits checks
 					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "analysis_limits.model_memory_limit", "100mb"),
+					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "analysis_limits.categorization_examples_limit", "5"),
 					// Data description checks
 					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "data_description.time_field", "@timestamp"),
 					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "data_description.time_format", "epoch_ms"),
 					// Model plot config checks
 					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "model_plot_config.enabled", "true"),
+					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "model_plot_config.terms", "host1"),
 					// Other settings checks
 					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "allow_lazy_open", "true"),
 					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "background_persist_interval", "1h"),
@@ -147,14 +156,20 @@ func TestAccResourceAnomalyDetectionJobComprehensive(t *testing.T) {
 					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "groups.#", "3"),
 					// Analysis config checks (should remain the same since these are generally immutable)
 					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "analysis_config.bucket_span", "10m"),
+					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "analysis_config.latency", "30s"),
+					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "analysis_config.summary_count_field_name", "event_count"),
 					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "analysis_config.detectors.#", "2"),
 					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "analysis_config.detectors.0.function", "count"),
+					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "analysis_config.detectors.0.partition_field_name", "host"),
 					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "analysis_config.detectors.1.function", "mean"),
 					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "analysis_config.detectors.1.field_name", "response_time"),
+					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "analysis_config.detectors.1.by_field_name", "status"),
+					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "analysis_config.detectors.1.over_field_name", "clientip"),
 					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "analysis_config.influencers.#", "1"),
 					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "analysis_config.influencers.0", "status_code"),
 					// Updated analysis limits checks
 					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "analysis_limits.model_memory_limit", "256mb"),
+					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "analysis_limits.categorization_examples_limit", "10"),
 					// Data description checks (should remain the same)
 					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "data_description.time_field", "@timestamp"),
 					resource.TestCheckResourceAttr("elasticstack_elasticsearch_ml_anomaly_detection_job.test", "data_description.time_format", "epoch_ms"),
@@ -218,6 +233,8 @@ func TestAccResourceAnomalyDetectionJobCategorizationFilters(t *testing.T) {
 					resource.TestCheckResourceAttr(addr, "job_id", jobID),
 					resource.TestCheckResourceAttr(addr, "analysis_config.categorization_field_name", "message"),
 					resource.TestCheckResourceAttr(addr, "analysis_config.categorization_filters.#", "2"),
+					resource.TestCheckResourceAttr(addr, "analysis_config.categorization_filters.0", `\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`),
+					resource.TestCheckResourceAttr(addr, "analysis_config.categorization_filters.1", `\b[A-Fa-f0-9]{8,}\b`),
 					resource.TestCheckResourceAttrSet(addr, "id"),
 				),
 			},
@@ -249,8 +266,34 @@ func TestAccResourceAnomalyDetectionJobPerPartitionDisabled(t *testing.T) {
 	})
 }
 
+// TestAccResourceAnomalyDetectionJobPerPartitionEnabled covers per_partition_categorization
+// with enabled=true and stop_on_warn=true, complementing the disabled regression test.
+func TestAccResourceAnomalyDetectionJobPerPartitionEnabled(t *testing.T) {
+	jobID := fmt.Sprintf("test-ad-ppc-on-%s", sdkacctest.RandStringFromCharSet(10, sdkacctest.CharSetAlphaNum))
+	addr := testResourceAddr
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() { acctest.PreCheck(t) },
+		Steps: []resource.TestStep{
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("create"),
+				ConfigVariables:          config.Variables{"job_id": config.StringVariable(jobID)},
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(addr, "job_id", jobID),
+					resource.TestCheckResourceAttr(addr, "analysis_config.per_partition_categorization.enabled", "true"),
+					resource.TestCheckResourceAttr(addr, "analysis_config.per_partition_categorization.stop_on_warn", "true"),
+					resource.TestCheckResourceAttrSet(addr, "id"),
+				),
+			},
+		},
+	})
+}
+
 // Regression test for #1564: custom_rules with conditions were not sent to ES on create,
 // and the read path failed to serialize them back from the API response.
+// The update step changes the condition value, triggering a destroy+recreate (analysis_config
+// is immutable), and asserts the new value is correctly persisted.
 func TestAccResourceAnomalyDetectionJobCustomRules(t *testing.T) {
 	jobID := fmt.Sprintf("test-ad-rules-%s", sdkacctest.RandStringFromCharSet(10, sdkacctest.CharSetAlphaNum))
 	addr := testResourceAddr
@@ -271,6 +314,16 @@ func TestAccResourceAnomalyDetectionJobCustomRules(t *testing.T) {
 					resource.TestCheckResourceAttr(addr, "analysis_config.detectors.0.custom_rules.0.conditions.0.applies_to", "actual"),
 					resource.TestCheckResourceAttr(addr, "analysis_config.detectors.0.custom_rules.0.conditions.0.operator", "lt"),
 					resource.TestCheckResourceAttr(addr, "analysis_config.detectors.0.custom_rules.0.conditions.0.value", "10"),
+					resource.TestCheckResourceAttrSet(addr, "id"),
+				),
+			},
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("update"),
+				ConfigVariables:          config.Variables{"job_id": config.StringVariable(jobID)},
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(addr, "job_id", jobID),
+					resource.TestCheckResourceAttr(addr, "analysis_config.detectors.0.custom_rules.0.conditions.0.value", "20"),
 					resource.TestCheckResourceAttrSet(addr, "id"),
 				),
 			},
@@ -326,4 +379,110 @@ func TestAccResourceAnomalyDetectionJobNullAndEmpty(t *testing.T) {
 			},
 		},
 	})
+}
+
+// TestAccResourceAnomalyDetectionJobExplicitConnection exercises the elasticsearch_connection block
+// (scoped Elasticsearch client) on the anomaly detection job resource directly.
+// It creates a job with an explicit connection using username/password (or api_key when available),
+// asserts connection block attributes, and verifies import works.
+func TestAccResourceAnomalyDetectionJobExplicitConnection(t *testing.T) {
+	endpoints := testAccAnomalyDetectionJobESEndpoints()
+	if len(endpoints) == 0 {
+		t.Skip("ELASTICSEARCH_ENDPOINTS must be set to run this test")
+	}
+	endpointVars := make([]config.Variable, 0, len(endpoints))
+	for _, endpoint := range endpoints {
+		endpointVars = append(endpointVars, config.StringVariable(endpoint))
+	}
+	jobID := fmt.Sprintf("test-ad-explicit-conn-%s", sdkacctest.RandStringFromCharSet(10, sdkacctest.CharSetAlphaNum))
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() { acctest.PreCheck(t) },
+		Steps: []resource.TestStep{
+			// Step 1: create with explicit connection (api_key if available, else username/password)
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("create"),
+				ConfigVariables: config.Variables{
+					"job_id":    config.StringVariable(jobID),
+					"endpoints": config.ListVariable(endpointVars...),
+					"api_key":   config.StringVariable(os.Getenv("ELASTICSEARCH_API_KEY")),
+					"username":  config.StringVariable(os.Getenv("ELASTICSEARCH_USERNAME")),
+					"password":  config.StringVariable(os.Getenv("ELASTICSEARCH_PASSWORD")),
+				},
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(testResourceAddr, "job_id", jobID),
+					resource.TestCheckResourceAttr(testResourceAddr, "elasticsearch_connection.#", "1"),
+					resource.TestCheckResourceAttr(testResourceAddr, "elasticsearch_connection.0.endpoints.#", fmt.Sprintf("%d", len(endpoints))),
+					resource.TestCheckResourceAttr(testResourceAddr, "elasticsearch_connection.0.endpoints.0", endpoints[0]),
+					resource.TestCheckResourceAttr(testResourceAddr, "elasticsearch_connection.0.insecure", "true"),
+					resource.TestCheckResourceAttrSet(testResourceAddr, "create_time"),
+					resource.TestCheckResourceAttr(testResourceAddr, "job_type", "anomaly_detector"),
+				),
+			},
+			// Step 2: import verification; sensitive connection block is ignored on import
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("create"),
+				ConfigVariables: config.Variables{
+					"job_id":    config.StringVariable(jobID),
+					"endpoints": config.ListVariable(endpointVars...),
+					"api_key":   config.StringVariable(os.Getenv("ELASTICSEARCH_API_KEY")),
+					"username":  config.StringVariable(os.Getenv("ELASTICSEARCH_USERNAME")),
+					"password":  config.StringVariable(os.Getenv("ELASTICSEARCH_PASSWORD")),
+				},
+				ResourceName:            testResourceAddr,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"elasticsearch_connection"},
+			},
+			// Step 3: update description while keeping the same explicit connection (username/password path)
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("update"),
+				ConfigVariables: config.Variables{
+					"job_id":    config.StringVariable(jobID),
+					"endpoints": config.ListVariable(endpointVars...),
+					"username":  config.StringVariable(os.Getenv("ELASTICSEARCH_USERNAME")),
+					"password":  config.StringVariable(os.Getenv("ELASTICSEARCH_PASSWORD")),
+				},
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(testResourceAddr, "job_id", jobID),
+					resource.TestCheckResourceAttr(testResourceAddr, "description", "Updated anomaly detection job with explicit connection"),
+					resource.TestCheckResourceAttr(testResourceAddr, "elasticsearch_connection.#", "1"),
+					resource.TestCheckResourceAttr(testResourceAddr, "elasticsearch_connection.0.endpoints.#", fmt.Sprintf("%d", len(endpoints))),
+					resource.TestCheckResourceAttr(testResourceAddr, "elasticsearch_connection.0.endpoints.0", endpoints[0]),
+					resource.TestCheckResourceAttr(testResourceAddr, "elasticsearch_connection.0.insecure", "true"),
+				),
+			},
+			// Step 4: re-import after update to confirm connection block survives
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("update"),
+				ConfigVariables: config.Variables{
+					"job_id":    config.StringVariable(jobID),
+					"endpoints": config.ListVariable(endpointVars...),
+					"username":  config.StringVariable(os.Getenv("ELASTICSEARCH_USERNAME")),
+					"password":  config.StringVariable(os.Getenv("ELASTICSEARCH_PASSWORD")),
+				},
+				ResourceName:            testResourceAddr,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"elasticsearch_connection"},
+			},
+		},
+	})
+}
+
+func testAccAnomalyDetectionJobESEndpoints() []string {
+	rawEndpoints := os.Getenv("ELASTICSEARCH_ENDPOINTS")
+	parts := strings.Split(rawEndpoints, ",")
+	endpoints := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			endpoints = append(endpoints, part)
+		}
+	}
+	return endpoints
 }

@@ -19,9 +19,11 @@ package template
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
-	"github.com/elastic/terraform-provider-elasticstack/internal/models"
+	estypes "github.com/elastic/go-elasticsearch/v8/typedapi/types"
+	esindex "github.com/elastic/terraform-provider-elasticstack/internal/elasticsearch/index"
 	"github.com/elastic/terraform-provider-elasticstack/internal/utils/customtypes"
 	"github.com/hashicorp/go-version"
 	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
@@ -68,13 +70,16 @@ func TestFlattenIndexTemplate_minimalRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	pr := 42
 	ver := 7
-	tpl := &models.IndexTemplate{
+	pr64 := int64(pr)
+	ver64 := int64(ver)
+	metaVal, _ := json.Marshal("v")
+	tpl := &estypes.IndexTemplate{
 		ComposedOf:                      []string{"a"},
 		IgnoreMissingComponentTemplates: []string{"missing"},
 		IndexPatterns:                   []string{"ix-*"},
-		Meta:                            map[string]any{"k": "v"},
-		Priority:                        &pr,
-		Version:                         &ver,
+		Meta_:                           estypes.Metadata{"k": metaVal},
+		Priority:                        &pr64,
+		Version:                         &ver64,
 	}
 	var m Model
 	diags := m.fromAPIModel(ctx, "tname", tpl)
@@ -193,7 +198,7 @@ func TestValidateDataStreamOptionsVersion(t *testing.T) {
 	}
 	tplObj, diags := types.ObjectValue(TemplateAttrTypes(), map[string]attr.Value{
 		"alias":               types.SetNull(NewAliasObjectType()),
-		"mappings":            jsontypes.NewNormalizedNull(),
+		"mappings":            esindex.NewMappingsNull(),
 		"settings":            customtypes.NewIndexSettingsNull(),
 		"lifecycle":           types.ObjectNull(LifecycleAttrTypes()),
 		"data_stream_options": dsoObj,
@@ -210,7 +215,7 @@ func TestValidateDataStreamOptionsVersion(t *testing.T) {
 	}
 	noDsoTpl, diags := types.ObjectValue(TemplateAttrTypes(), map[string]attr.Value{
 		"alias":               types.SetNull(NewAliasObjectType()),
-		"mappings":            jsontypes.NewNormalizedNull(),
+		"mappings":            esindex.NewMappingsNull(),
 		"settings":            customtypes.NewIndexSettingsNull(),
 		"lifecycle":           types.ObjectNull(LifecycleAttrTypes()),
 		"data_stream_options": types.ObjectNull(DataStreamOptionsAttrTypes()),
@@ -227,11 +232,14 @@ func TestValidateDataStreamOptionsVersion(t *testing.T) {
 func TestFlattenAliasElement_emptyFilterMapIsNull(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	av, diags := flattenAliasElement("a", models.IndexAlias{
-		Filter:        map[string]any{},
-		IndexRouting:  "ir",
-		Routing:       "r",
-		SearchRouting: "sr",
+	ir := "ir"
+	r := "r"
+	sr := "sr"
+	av, diags := flattenAliasElement("a", estypes.Alias{
+		Filter:        nil,
+		IndexRouting:  &ir,
+		Routing:       &r,
+		SearchRouting: &sr,
 	})
 	if diags.HasError() {
 		t.Fatal(diags)

@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"strings"
 
+	estypes "github.com/elastic/go-elasticsearch/v8/typedapi/types"
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients/elasticsearch"
 	"github.com/elastic/terraform-provider-elasticstack/internal/models"
@@ -221,7 +222,7 @@ func resourceComponentTemplateRead(ctx context.Context, d *schema.ResourceData, 
 	}
 	templateID := compID.ResourceID
 
-	tpl, diags := elasticsearch.GetComponentTemplate(ctx, client, templateID, false)
+	tpl, diags := elasticsearch.GetComponentTemplate(ctx, client, templateID)
 	if tpl == nil && diags == nil {
 		tflog.Warn(ctx, fmt.Sprintf(`Component template "%s" not found, removing from state`, compID.ResourceID))
 		d.SetId("")
@@ -231,13 +232,20 @@ func resourceComponentTemplateRead(ctx context.Context, d *schema.ResourceData, 
 		return diags
 	}
 
+	modelTpl := toModelComponentTemplateResponse(tpl)
+	if modelTpl == nil {
+		tflog.Warn(ctx, fmt.Sprintf(`Component template "%s" not found, removing from state`, compID.ResourceID))
+		d.SetId("")
+		return diags
+	}
+
 	// set the fields
-	if err := d.Set("name", tpl.Name); err != nil {
+	if err := d.Set("name", modelTpl.Name); err != nil {
 		return diag.FromErr(err)
 	}
 
-	if tpl.ComponentTemplate.Meta != nil {
-		metadata, err := json.Marshal(tpl.ComponentTemplate.Meta)
+	if modelTpl.ComponentTemplate.Meta != nil {
+		metadata, err := json.Marshal(modelTpl.ComponentTemplate.Meta)
 		if err != nil {
 			return diag.FromErr(err)
 		}
@@ -246,9 +254,9 @@ func resourceComponentTemplateRead(ctx context.Context, d *schema.ResourceData, 
 		}
 	}
 
-	if tpl.ComponentTemplate.Template != nil {
+	if modelTpl.ComponentTemplate.Template != nil {
 		template, diags := flattenTemplateData(
-			tpl.ComponentTemplate.Template,
+			modelTpl.ComponentTemplate.Template,
 			extractAliasRoutingFromTemplateState(d.Get("template")),
 		)
 		if diags.HasError() {
@@ -260,7 +268,7 @@ func resourceComponentTemplateRead(ctx context.Context, d *schema.ResourceData, 
 		}
 	}
 
-	if err := d.Set("version", tpl.ComponentTemplate.Version); err != nil {
+	if err := d.Set("version", modelTpl.ComponentTemplate.Version); err != nil {
 		return diag.FromErr(err)
 	}
 
@@ -286,4 +294,75 @@ func resourceComponentTemplateDelete(ctx context.Context, d *schema.ResourceData
 		return diags
 	}
 	return diags
+}
+
+func toModelComponentTemplateResponse(tpl *estypes.ClusterComponentTemplate) *models.ComponentTemplateResponse {
+	if tpl == nil {
+		return nil
+	}
+
+	resp := &models.ComponentTemplateResponse{
+		Name: tpl.Name,
+		ComponentTemplate: models.ComponentTemplate{
+			Name: tpl.Name,
+		},
+	}
+
+	if tpl.ComponentTemplate.Meta_ != nil {
+		metaBytes, _ := json.Marshal(tpl.ComponentTemplate.Meta_)
+		var metaMap map[string]any
+		_ = json.Unmarshal(metaBytes, &metaMap)
+		resp.ComponentTemplate.Meta = metaMap
+	}
+
+	{
+		t := &models.Template{}
+
+		if tpl.ComponentTemplate.Template.Settings != nil {
+			settingsBytes, _ := json.Marshal(tpl.ComponentTemplate.Template.Settings)
+			var settingsMap map[string]any
+			_ = json.Unmarshal(settingsBytes, &settingsMap)
+			t.Settings = settingsMap
+		}
+
+		if tpl.ComponentTemplate.Template.Mappings != nil {
+			mappingsBytes, _ := json.Marshal(tpl.ComponentTemplate.Template.Mappings)
+			var mappingsMap map[string]any
+			_ = json.Unmarshal(mappingsBytes, &mappingsMap)
+			t.Mappings = mappingsMap
+		}
+
+		if len(tpl.ComponentTemplate.Template.Aliases) > 0 {
+			t.Aliases = make(map[string]models.IndexAlias, len(tpl.ComponentTemplate.Template.Aliases))
+			for name, alias := range tpl.ComponentTemplate.Template.Aliases {
+				ia := models.IndexAlias{Name: name}
+				if alias.Filter != nil {
+					filterBytes, _ := json.Marshal(alias.Filter)
+					var filterMap map[string]any
+					_ = json.Unmarshal(filterBytes, &filterMap)
+					ia.Filter = filterMap
+				}
+				if alias.IndexRouting != nil {
+					ia.IndexRouting = *alias.IndexRouting
+				}
+				if alias.IsHidden != nil {
+					ia.IsHidden = *alias.IsHidden
+				}
+				if alias.IsWriteIndex != nil {
+					ia.IsWriteIndex = *alias.IsWriteIndex
+				}
+				if alias.Routing != nil {
+					ia.Routing = *alias.Routing
+				}
+				if alias.SearchRouting != nil {
+					ia.SearchRouting = *alias.SearchRouting
+				}
+				t.Aliases[name] = ia
+			}
+		}
+
+		resp.ComponentTemplate.Template = t
+	}
+
+	return resp
 }

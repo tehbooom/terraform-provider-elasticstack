@@ -18,12 +18,12 @@ resource "elasticstack_elasticsearch_transform" "example" {
   source {                                            # required, max 1
     indices          = <required, list(string)>
     query            = <optional, string>             # JSON string; default: {"match_all":{}}; JSON-normalized diff suppression
-    runtime_mappings = <optional, string>             # JSON string; JSON-normalized diff suppression; requires Elasticsearch >= 7.12.0
+    runtime_mappings = <optional, string>             # JSON string; JSON-normalized diff suppression
   }
 
   destination {                                       # required, max 1
     index    = <required, string>                     # 1–255 chars; lowercase alphanumeric + selected punctuation; cannot start with -, _, +
-    pipeline = <optional, string>                     # requires Elasticsearch >= 7.3.0
+    pipeline = <optional, string>
     aliases {                                         # optional, list; requires Elasticsearch >= 8.8.0
       alias           = <required, string>
       move_on_creation = <optional, bool>             # default: false
@@ -31,13 +31,13 @@ resource "elasticstack_elasticsearch_transform" "example" {
   }
 
   pivot  = <optional, string>   # JSON string; exactly one of pivot or latest required; force new; JSON-normalized diff suppression
-  latest = <optional, string>   # JSON string; exactly one of pivot or latest required; force new; JSON-normalized diff suppression; requires Elasticsearch >= 7.11.0
+  latest = <optional, string>   # JSON string; exactly one of pivot or latest required; force new; JSON-normalized diff suppression
 
-  frequency = <optional, string> # Elastic duration string; default: "1m"; requires Elasticsearch >= 7.3.0
+  frequency = <optional, string> # Elastic duration string; default: "1m"
 
-  metadata = <optional, string>  # JSON string; JSON-normalized diff suppression; requires Elasticsearch >= 7.16.0
+  metadata = <optional, string>  # JSON string; JSON-normalized diff suppression
 
-  retention_policy {                                  # optional, max 1; requires Elasticsearch >= 7.12.0
+  retention_policy {                                  # optional, max 1
     time {                                            # required, max 1
       field   = <required, string>
       max_age = <required, string>                    # Elastic duration string
@@ -51,12 +51,12 @@ resource "elasticstack_elasticsearch_transform" "example" {
     }
   }
 
-  # Settings — each requires a minimum Elasticsearch version (see Compatibility requirements)
-  align_checkpoints    = <optional, bool>    # requires Elasticsearch >= 7.15.0
-  dates_as_epoch_millis = <optional, bool>   # requires Elasticsearch >= 7.11.0
+  # Settings — requires a minimum Elasticsearch version when noted
+  align_checkpoints    = <optional, bool>
+  dates_as_epoch_millis = <optional, bool>
   deduce_mappings      = <optional, bool>    # requires Elasticsearch >= 8.1.0
-  docs_per_second      = <optional, float>   # >= 0; requires Elasticsearch >= 7.8.0
-  max_page_search_size = <optional, int>     # 10–65536; requires Elasticsearch >= 7.8.0
+  docs_per_second      = <optional, float>   # >= 0
+  max_page_search_size = <optional, int>     # 10–65536
   num_failure_retries  = <optional, int>     # -1–100; requires Elasticsearch >= 8.4.0
   unattended           = <optional, bool>    # requires Elasticsearch >= 8.5.0
 
@@ -82,9 +82,7 @@ resource "elasticstack_elasticsearch_transform" "example" {
   }
 }
 ```
-
 ## Requirements
-
 ### Requirement: Transform CRUD APIs (REQ-001–REQ-005)
 
 The resource SHALL use the Elasticsearch Put Transform API to create transforms ([docs](https://www.elastic.co/guide/en/elasticsearch/reference/current/put-transform.html)). The resource SHALL use the Elasticsearch Update Transform API to update transforms ([docs](https://www.elastic.co/guide/en/elasticsearch/reference/current/update-transform.html)). The resource SHALL use the Elasticsearch Get Transform API to read transform definitions ([docs](https://www.elastic.co/guide/en/elasticsearch/reference/current/get-transform.html)). The resource SHALL use the Elasticsearch Get Transform Statistics API to read transform run state ([docs](https://www.elastic.co/guide/en/elasticsearch/reference/current/get-transform-stats.html)). The resource SHALL use the Elasticsearch Delete Transform API with `force=true` to delete transforms ([docs](https://www.elastic.co/guide/en/elasticsearch/reference/current/delete-transform.html)). When Elasticsearch returns a non-success status for any API call (except 404 on read), the resource SHALL surface the API error to Terraform diagnostics.
@@ -100,16 +98,6 @@ The resource SHALL use the Elasticsearch Put Transform API to create transforms 
 - GIVEN a non-success response from the Delete Transform API
 - WHEN the provider handles the response
 - THEN Terraform diagnostics SHALL include the error
-
-### Requirement: Minimum server version for transforms (REQ-006)
-
-The resource SHALL verify the Elasticsearch server version is at least `7.2.0` before calling the Put Transform or Update Transform API. If the server version is lower, the resource SHALL fail with a "Transforms not supported" error diagnostic and SHALL not proceed with the API call.
-
-#### Scenario: Server too old
-
-- GIVEN an Elasticsearch server with version below `7.2.0`
-- WHEN create or update is attempted
-- THEN the resource SHALL return a "Transforms not supported" error and SHALL not call the API
 
 ### Requirement: Identity and import (REQ-007–REQ-009)
 
@@ -171,11 +159,11 @@ On create, when `enabled` is `true`, the resource SHALL call the Elasticsearch S
 
 ### Requirement: Timeout parameter (REQ-016–REQ-017)
 
-The `timeout` attribute SHALL accept a Go duration string and SHALL default to `"30s"`. When the Elasticsearch server version is at least `7.17.0`, the resource SHALL pass the parsed `timeout` value as the API operation timeout parameter to the Put Transform, Update Transform, Start Transform, and Stop Transform APIs. When the server version is below `7.17.0`, the resource SHALL omit the timeout parameter from API calls.
+The `timeout` attribute SHALL accept a Go duration string and SHALL default to `"30s"`. The resource SHALL pass the parsed `timeout` value as the API operation timeout parameter to the Put Transform, Update Transform, Start Transform, and Stop Transform APIs.
 
-#### Scenario: Timeout passed to API on supported version
+#### Scenario: Timeout passed to API
 
-- GIVEN an Elasticsearch server >= 7.17.0 and `timeout = "60s"`
+- GIVEN `timeout = "60s"`
 - WHEN create or update runs
 - THEN the API call SHALL include a 60-second timeout parameter
 
@@ -201,28 +189,26 @@ Exactly one of `pivot` or `latest` MUST be configured. The schema SHALL enforce 
 
 ### Requirement: Version-gated settings (REQ-020–REQ-032)
 
-Settings and capabilities that require a minimum Elasticsearch version SHALL be silently omitted from API calls (with a log warning) when the server version is below the minimum. The version requirements are:
+Settings and capabilities that require a minimum supported Elasticsearch version later than `8.0.0` SHALL be silently omitted from API calls (with a log warning) when the server version is below the minimum. The version requirements are:
 
-- `destination.pipeline`: requires Elasticsearch >= `7.3.0`
 - `destination.aliases`: requires Elasticsearch >= `8.8.0`
-- `frequency`: requires Elasticsearch >= `7.3.0`
-- `latest`: requires Elasticsearch >= `7.11.0`
-- `retention_policy`: requires Elasticsearch >= `7.12.0`
-- `source.runtime_mappings`: requires Elasticsearch >= `7.12.0`
-- `metadata`: requires Elasticsearch >= `7.16.0`
-- `docs_per_second`: requires Elasticsearch >= `7.8.0`
-- `max_page_search_size`: requires Elasticsearch >= `7.8.0`
-- `dates_as_epoch_millis`: requires Elasticsearch >= `7.11.0`
-- `align_checkpoints`: requires Elasticsearch >= `7.15.0`
 - `deduce_mappings`: requires Elasticsearch >= `8.1.0`
 - `num_failure_retries`: requires Elasticsearch >= `8.4.0`
 - `unattended`: requires Elasticsearch >= `8.5.0`
 
+Transform settings and capabilities that are available throughout the supported `8.x` and later range SHALL NOT have pre-8.0 compatibility gates.
+
 #### Scenario: Version-gated setting silently omitted
 
-- GIVEN `align_checkpoints = true` and an Elasticsearch server version below `7.15.0`
+- GIVEN `deduce_mappings = true` and an Elasticsearch server version below `8.1.0`
 - WHEN create or update runs
-- THEN `align_checkpoints` SHALL be omitted from the API request body and a warning SHALL be logged
+- THEN `deduce_mappings` SHALL be omitted from the API request body and a warning SHALL be logged
+
+#### Scenario: Supported-range setting is always sent
+
+- GIVEN `align_checkpoints = true`
+- WHEN create or update runs against a supported Elasticsearch server version
+- THEN `align_checkpoints` SHALL be included in the API request body
 
 ### Requirement: Create and read-after-write (REQ-033)
 
@@ -266,7 +252,7 @@ The `source.query` field SHALL be validated as a JSON string by schema, SHALL de
 
 ### Requirement: JSON field mapping — pivot, latest, metadata (REQ-038–REQ-040)
 
-The `pivot` and `latest` fields SHALL be validated as JSON strings and SHALL apply JSON-normalized diff suppression. On create, the resource SHALL decode `pivot` or `latest` (whichever is set) into an `any` value for the API request. The `metadata` field SHALL be validated as a JSON string and SHALL apply JSON-normalized diff suppression. On create and update, when `metadata` is set and the server version is at least `7.16.0`, the resource SHALL decode it into a `map[string]any` for the API request.
+The `pivot` and `latest` fields SHALL be validated as JSON strings and SHALL apply JSON-normalized diff suppression. On create, the resource SHALL decode `pivot` or `latest` (whichever is set) into an `any` value for the API request. The `metadata` field SHALL be validated as a JSON string and SHALL apply JSON-normalized diff suppression. On create and update, when `metadata` is set, the resource SHALL decode it into a `map[string]any` for the API request.
 
 #### Scenario: Invalid pivot JSON rejected
 
@@ -319,3 +305,105 @@ The `name` attribute SHALL be validated to: be between 1 and 64 characters, cont
 - GIVEN a `name` value that starts with a hyphen or contains uppercase characters
 - WHEN the configuration is applied
 - THEN the provider SHALL return a validation error
+
+### Requirement: Transform create uses typed client
+`PutTransform` SHALL use the go-elasticsearch Typed API (`elasticsearch.TypedClient.Transform.PutTransform`). It SHALL pass the transform request body via the typed API's `.Raw()` method so that all fields — including `destination.aliases` — are preserved. Query parameters (`defer_validation`, `timeout`) SHALL be set via the typed API builder methods. The helper SHALL surface API errors as Terraform diagnostics.
+
+#### Scenario: Typed API create with aliases
+- **GIVEN** a transform configuration that includes `destination.aliases`
+- **WHEN** `PutTransform` is called
+- **THEN** it calls the typed `Transform.PutTransform` API
+- **AND** the request body includes the `aliases` field
+- **AND** it returns no error diagnostics on success
+
+#### Scenario: Typed API create error handling
+- **GIVEN** the Put Transform API returns an error
+- **WHEN** `PutTransform` processes the response
+- **THEN** it returns Terraform diagnostics containing the API error
+
+### Requirement: Transform read uses typed client
+`GetTransform` SHALL use the go-elasticsearch Typed API (`elasticsearch.TypedClient.Transform.GetTransform`) via `.Perform()` to obtain the raw HTTP response. It SHALL decode the response body into the existing `models.GetTransformResponse` structure so that all fields — including `destination.aliases` — are read correctly. When the API returns HTTP 404, the helper SHALL return `nil` with no error diagnostics.
+
+#### Scenario: Typed API read existing transform
+- **GIVEN** an existing transform with `destination.aliases`
+- **WHEN** `GetTransform` is called
+- **THEN** it calls the typed `Transform.GetTransform` API
+- **AND** the returned transform includes the `aliases` field
+- **AND** it returns no error diagnostics
+
+#### Scenario: Typed API read missing transform
+- **GIVEN** the requested transform does not exist
+- **WHEN** `GetTransform` is called
+- **THEN** it returns `nil` and no error diagnostics
+
+### Requirement: Transform stats uses typed client
+`GetTransformStats` SHALL use the go-elasticsearch Typed API (`elasticsearch.TypedClient.Transform.GetTransformStats`). It SHALL search the returned `[]types.TransformStats` for the matching transform ID and derive the `enabled` state from the `state` field ("started" or "indexing" means enabled).
+
+#### Scenario: Typed API stats for started transform
+- **GIVEN** a transform whose state is "started"
+- **WHEN** `GetTransformStats` is called
+- **THEN** it calls the typed `Transform.GetTransformStats` API
+- **AND** it returns stats with `IsStarted() == true`
+
+#### Scenario: Typed API stats for stopped transform
+- **GIVEN** a transform whose state is "stopped"
+- **WHEN** `GetTransformStats` is called
+- **THEN** it calls the typed `Transform.GetTransformStats` API
+- **AND** it returns stats with `IsStarted() == false`
+
+### Requirement: Transform update uses typed client
+`UpdateTransform` SHALL use the go-elasticsearch Typed API (`elasticsearch.TypedClient.Transform.UpdateTransform`). It SHALL pass the transform request body via the typed API's `.Raw()` method so that all updatable fields are preserved. Query parameters (`defer_validation`, `timeout`) SHALL be set via the typed API builder methods. After a successful update, it SHALL optionally call `startTransform` or `stopTransform` based on the `enabled` change exactly as today.
+
+#### Scenario: Typed API update with enabled change
+- **GIVEN** an existing transform and `enabled` changed to `false`
+- **WHEN** `UpdateTransform` is called
+- **THEN** it calls the typed `Transform.UpdateTransform` API
+- **AND** it calls `stopTransform` after the update succeeds
+- **AND** it returns no error diagnostics on success
+
+#### Scenario: Typed API update without enabled change
+- **GIVEN** an existing transform and `enabled` is unchanged
+- **WHEN** `UpdateTransform` is called
+- **THEN** it calls the typed `Transform.UpdateTransform` API
+- **AND** it does NOT call `startTransform` or `stopTransform`
+
+### Requirement: Transform delete uses typed client
+`DeleteTransform` SHALL use the go-elasticsearch Typed API (`elasticsearch.TypedClient.Transform.DeleteTransform`). It SHALL pass `force=true` via the typed API builder method. The helper SHALL surface API errors as Terraform diagnostics.
+
+#### Scenario: Typed API delete transform
+- **GIVEN** an existing transform
+- **WHEN** `DeleteTransform` is called
+- **THEN** it calls the typed `Transform.DeleteTransform` API with `force=true`
+- **AND** it returns no error diagnostics on success
+
+#### Scenario: Typed API delete error handling
+- **GIVEN** the Delete Transform API returns an error
+- **WHEN** `DeleteTransform` processes the response
+- **THEN** it returns Terraform diagnostics containing the API error
+
+### Requirement: Transform start uses typed client
+`startTransform` SHALL use the go-elasticsearch Typed API (`elasticsearch.TypedClient.Transform.StartTransform`). It SHALL pass the `timeout` parameter via the typed API builder method. The helper SHALL surface API errors as Terraform diagnostics.
+
+#### Scenario: Typed API start transform
+- **GIVEN** a stopped transform
+- **WHEN** `startTransform` is called
+- **THEN** it calls the typed `Transform.StartTransform` API
+- **AND** it returns no error diagnostics on success
+
+### Requirement: Transform stop uses typed client
+`stopTransform` SHALL use the go-elasticsearch Typed API (`elasticsearch.TypedClient.Transform.StopTransform`). It SHALL pass the `timeout` parameter via the typed API builder method. The helper SHALL surface API errors as Terraform diagnostics.
+
+#### Scenario: Typed API stop transform
+- **GIVEN** a started transform
+- **WHEN** `stopTransform` is called
+- **THEN** it calls the typed `Transform.StopTransform` API
+- **AND** it returns no error diagnostics on success
+
+### Requirement: Unused transform model types are removed
+The custom model types `models.PutTransformParams`, `models.UpdateTransformParams`, `models.TransformStats`, and `models.GetTransformStatsResponse` SHALL be removed once all callers have been migrated to typed client equivalents or to inline parameters. `models.Transform` and `models.GetTransformResponse` MAY be retained for JSON body construction and response decoding where the typed API types do not fully cover provider-supported fields.
+
+#### Scenario: Build succeeds after model cleanup
+- **GIVEN** all callers have been updated to use typed client types or inline params
+- **WHEN** the unused custom models are removed from `internal/models/transform.go`
+- **THEN** `make build` completes successfully
+

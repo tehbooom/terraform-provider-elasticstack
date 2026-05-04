@@ -45,3 +45,73 @@ The canonical list is the root `Makefile`, but the usual ones are:
 - `make test`
 - `make testacc` (requires Docker and `TF_ACC=1`)
 - `make docs-generate`
+
+## Parallel development with worktrunk
+
+[worktrunk](https://github.com/elastic/worktrunk) manages feature worktrees for this repository so multiple branches can be developed in parallel without switching the main working tree.
+
+### Shell integration
+
+Install the shell hook once to get the `wt` alias and tab completion:
+
+```bash
+wt config shell install
+```
+
+After reloading your shell profile, you can use `wt <branch>` to create or switch to a feature worktree, and `wt` commands will have tab completion.
+
+### User configuration
+
+Keep worktrees inside the bare repo by setting the worktree path template in `~/.config/worktrunk/config.toml`:
+
+```toml
+worktree-path = "{{ repo_path }}/{{ branch | sanitize }}"
+```
+
+Each feature worktree becomes a subdirectory of the bare repo directory, keeping related branches discoverable and avoiding scattered worktrees across the filesystem.
+
+### Environment in a feature worktree
+
+When a new worktree is created the `post-start` hook (`.config/wt.toml`) automatically generates a `.env` from `.env.template` with per-worktree port variables derived deterministically from the branch name.
+
+The main checkout's `.env` may not contain port variables if it predates the worktrunk setup; port variables are generated only in worktrees created via `wt switch --create`.
+
+Before running Makefile targets that talk directly to Elasticsearch or Kibana on `localhost`, export the worktree's `.env` so the port variables are visible to Make:
+
+```bash
+set -a; . ./.env; set +a
+# Then run port-dependent targets, for example:
+make testacc-vs-docker
+make set-kibana-password
+make setup-synthetics
+make create-es-api-key
+make create-es-bearer-token
+make setup-kibana-fleet
+```
+
+Targets that use `docker compose` (for example `make docker-elasticsearch`, `make docker-kibana`, and `make docker-fleet`) automatically read `.env` from the current directory, so they do not require the export step.
+
+Alternatively, pass the variables explicitly on the command line:
+
+```bash
+make testacc-vs-docker ELASTICSEARCH_PORT=12345 KIBANA_PORT=16789
+```
+
+### Cleanup
+
+When a worktree is removed (`wt remove`), the `pre-remove` hook (`docker compose down --volumes`) automatically tears down the Docker Compose stack for that worktree.
+
+## Example snippets (`examples/resources`, `examples/data-sources`)
+
+These trees hold copy-paste-ready Terraform for this provider. Snippets **may** be surfaced on generated reference pages (`docs/resources/`, `docs/data-sources/`), in docs templates, or in guides—not every `.tf` is shown on every page, but **each covered file** participates in validation below.
+
+Regardless of how a file is surfaced, contributions must satisfy both of the following:
+
+- **Self-contained modules:** A file must not depend on declarations that exist only in a sibling `.tf` in the same directory (locals, variables, resources, data sources copied from another file).
+- **Plan-only acceptance coverage:** `TestAccExamples_planOnly` in `internal/acctest/` plans every covered example in isolation against the provider (with `TF_ACC=1` and the usual Elasticsearch/Kibana environment variables used elsewhere in acceptance tests).
+
+If you touch or add snippets, run the harness targeted at your change—for example:
+
+`TF_ACC=1 go test ./internal/acctest -run '^TestAccExamples_planOnly$' -count=1`
+
+Some paths are intentionally skipped in the harness (documented beside the harness); those remain rare exceptions.

@@ -24,8 +24,11 @@ import (
 	"reflect"
 	"strings"
 
+	estypes "github.com/elastic/go-elasticsearch/v8/typedapi/types"
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
+	"github.com/elastic/terraform-provider-elasticstack/internal/clients/elasticsearch"
 	"github.com/elastic/terraform-provider-elasticstack/internal/diagutil"
+	"github.com/elastic/terraform-provider-elasticstack/internal/elasticsearch/index"
 	"github.com/elastic/terraform-provider-elasticstack/internal/models"
 	"github.com/elastic/terraform-provider-elasticstack/internal/utils/customtypes"
 	"github.com/elastic/terraform-provider-elasticstack/internal/utils/typeutils"
@@ -166,9 +169,10 @@ type tfModel struct {
 	AnalysisFilter                     jsontypes.Normalized `tfsdk:"analysis_filter"`
 	AnalysisNormalizer                 jsontypes.Normalized `tfsdk:"analysis_normalizer"`
 	Alias                              types.Set            `tfsdk:"alias"`
-	Mappings                           jsontypes.Normalized `tfsdk:"mappings"`
+	Mappings                           index.MappingsValue  `tfsdk:"mappings"`
 	SettingsRaw                        jsontypes.Normalized `tfsdk:"settings_raw"`
 	DeletionProtection                 types.Bool           `tfsdk:"deletion_protection"`
+	UseExisting                        types.Bool           `tfsdk:"use_existing"`
 	WaitForActiveShards                types.String         `tfsdk:"wait_for_active_shards"`
 	MasterTimeout                      customtypes.Duration `tfsdk:"master_timeout"`
 	Timeout                            customtypes.Duration `tfsdk:"timeout"`
@@ -194,7 +198,7 @@ type settingTfModel struct {
 	Value types.String `tfsdk:"value"`
 }
 
-func (model *tfModel) populateFromAPI(ctx context.Context, indexName string, apiModel models.Index) diag.Diagnostics {
+func (model *tfModel) populateFromAPI(ctx context.Context, indexName string, apiModel estypes.IndexState) diag.Diagnostics {
 	// Always set the concrete name to the actual index name from Elasticsearch.
 	model.ConcreteName = types.StringValue(indexName)
 
@@ -219,8 +223,7 @@ func (model *tfModel) populateFromAPI(ctx context.Context, indexName string, api
 				diag.NewErrorDiagnostic("failed to marshal index mappings", err.Error()),
 			}
 		}
-
-		model.Mappings = jsontypes.NewNormalizedValue(string(mappingBytes))
+		model.Mappings = index.NewMappingsValue(string(mappingBytes))
 	}
 
 	diags = setSettingsFromAPI(model, apiModel)
@@ -231,7 +234,7 @@ func (model *tfModel) populateFromAPI(ctx context.Context, indexName string, api
 	return nil
 }
 
-func aliasesFromAPI(ctx context.Context, apiModel models.Index) (basetypes.SetValue, diag.Diagnostics) {
+func aliasesFromAPI(ctx context.Context, apiModel estypes.IndexState) (basetypes.SetValue, diag.Diagnostics) {
 	aliases := []aliasTfModel{}
 	for name, alias := range apiModel.Aliases {
 		tfAlias, diags := newAliasModelFromAPI(name, alias)
@@ -250,7 +253,7 @@ func aliasesFromAPI(ctx context.Context, apiModel models.Index) (basetypes.SetVa
 	return modelAliases, nil
 }
 
-func setSettingsFromAPI(model *tfModel, apiModel models.Index) diag.Diagnostics {
+func setSettingsFromAPI(model *tfModel, apiModel estypes.IndexState) diag.Diagnostics {
 	settingsBytes, err := json.Marshal(apiModel.Settings)
 	if err != nil {
 		return diag.Diagnostics{
@@ -433,8 +436,10 @@ func (model tfModel) toIndexSettings(ctx context.Context) (map[string]any, diag.
 	}
 
 	var settingSet []settingsTfSet
-	if diags := model.Settings.ElementsAs(ctx, &settingSet, true); diags.HasError() {
-		return map[string]any{}, diags
+	if typeutils.IsKnown(model.Settings) {
+		if diags := model.Settings.ElementsAs(ctx, &settingSet, true); diags.HasError() {
+			return map[string]any{}, diags
+		}
 	}
 
 	if len(settingSet) == 1 {
@@ -496,14 +501,14 @@ func (model aliasTfModel) toAPIModel() (models.IndexAlias, diag.Diagnostics) {
 	return apiModel, nil
 }
 
-func newAliasModelFromAPI(name string, apiModel models.IndexAlias) (aliasTfModel, diag.Diagnostics) {
+func newAliasModelFromAPI(name string, apiModel estypes.Alias) (aliasTfModel, diag.Diagnostics) {
 	tfAlias := aliasTfModel{
 		Name:          types.StringValue(name),
-		IndexRouting:  types.StringValue(apiModel.IndexRouting),
-		IsHidden:      types.BoolValue(apiModel.IsHidden),
-		IsWriteIndex:  types.BoolValue(apiModel.IsWriteIndex),
-		Routing:       types.StringValue(apiModel.Routing),
-		SearchRouting: types.StringValue(apiModel.SearchRouting),
+		IndexRouting:  types.StringValue(derefString(apiModel.IndexRouting)),
+		IsHidden:      types.BoolValue(derefBool(apiModel.IsHidden)),
+		IsWriteIndex:  types.BoolValue(derefBool(apiModel.IsWriteIndex)),
+		Routing:       types.StringValue(derefString(apiModel.Routing)),
+		SearchRouting: types.StringValue(derefString(apiModel.SearchRouting)),
 	}
 
 	if apiModel.Filter != nil {
@@ -513,9 +518,115 @@ func newAliasModelFromAPI(name string, apiModel models.IndexAlias) (aliasTfModel
 				diag.NewErrorDiagnostic("failed to marshal alias filter", err.Error()),
 			}
 		}
-
-		tfAlias.Filter = jsontypes.NewNormalizedValue(string(filterBytes))
+		var filterMap map[string]any
+		if err := json.Unmarshal(filterBytes, &filterMap); err != nil {
+			return aliasTfModel{}, diag.Diagnostics{
+				diag.NewErrorDiagnostic("failed to unmarshal alias filter", err.Error()),
+			}
+		}
+		normalized := elasticsearch.NormalizeQueryFilter(filterMap)
+		if nm, ok := normalized.(map[string]any); ok {
+			filterMap = nm
+		}
+		normalizedBytes, _ := json.Marshal(filterMap)
+		tfAlias.Filter = jsontypes.NewNormalizedValue(string(normalizedBytes))
 	}
 
 	return tfAlias, nil
+}
+
+func derefString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+func derefBool(b *bool) bool {
+	if b == nil {
+		return false
+	}
+	return *b
+}
+
+func indexStateToModel(state estypes.IndexState) (models.Index, diag.Diagnostics) {
+	var model models.Index
+
+	if len(state.Aliases) > 0 {
+		model.Aliases = make(map[string]models.IndexAlias, len(state.Aliases))
+		for name, alias := range state.Aliases {
+			indexAlias := models.IndexAlias{
+				Name:          name,
+				IndexRouting:  derefString(alias.IndexRouting),
+				IsHidden:      derefBool(alias.IsHidden),
+				IsWriteIndex:  derefBool(alias.IsWriteIndex),
+				Routing:       derefString(alias.Routing),
+				SearchRouting: derefString(alias.SearchRouting),
+			}
+			if alias.Filter != nil {
+				filterBytes, err := json.Marshal(alias.Filter)
+				if err != nil {
+					return models.Index{}, diag.Diagnostics{
+						diag.NewErrorDiagnostic("failed to marshal alias filter", err.Error()),
+					}
+				}
+				var filterMap map[string]any
+				if err := json.Unmarshal(filterBytes, &filterMap); err != nil {
+					return models.Index{}, diag.Diagnostics{
+						diag.NewErrorDiagnostic("failed to unmarshal alias filter", err.Error()),
+					}
+				}
+				indexAlias.Filter = elasticsearch.NormalizeQueryFilter(filterMap).(map[string]any)
+			}
+			model.Aliases[name] = indexAlias
+		}
+	}
+
+	if state.Mappings != nil {
+		mappingBytes, err := json.Marshal(state.Mappings)
+		if err != nil {
+			return models.Index{}, diag.Diagnostics{
+				diag.NewErrorDiagnostic("failed to marshal index mappings", err.Error()),
+			}
+		}
+		if err := json.Unmarshal(mappingBytes, &model.Mappings); err != nil {
+			return models.Index{}, diag.Diagnostics{
+				diag.NewErrorDiagnostic("failed to unmarshal index mappings", err.Error()),
+			}
+		}
+	}
+
+	if state.Settings != nil {
+		settingsBytes, err := json.Marshal(state.Settings)
+		if err != nil {
+			return models.Index{}, diag.Diagnostics{
+				diag.NewErrorDiagnostic("failed to marshal index settings", err.Error()),
+			}
+		}
+		if err := json.Unmarshal(settingsBytes, &model.Settings); err != nil {
+			return models.Index{}, diag.Diagnostics{
+				diag.NewErrorDiagnostic("failed to unmarshal index settings", err.Error()),
+			}
+		}
+	}
+
+	return model, nil
+}
+
+func modelToIndexState(model models.Index) (estypes.IndexState, diag.Diagnostics) {
+	bytes, err := json.Marshal(model)
+	if err != nil {
+		return estypes.IndexState{}, diag.Diagnostics{
+			diag.NewErrorDiagnostic("failed to marshal index model", err.Error()),
+		}
+	}
+
+	var state estypes.IndexState
+	if err := json.Unmarshal(bytes, &state); err != nil {
+		return estypes.IndexState{}, diag.Diagnostics{
+			diag.NewErrorDiagnostic("failed to unmarshal to typed index state", err.Error()),
+		}
+	}
+
+	return state, nil
 }

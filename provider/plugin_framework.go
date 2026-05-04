@@ -35,6 +35,7 @@ import (
 	"github.com/elastic/terraform-provider-elasticstack/internal/elasticsearch/index/template"
 	"github.com/elastic/terraform-provider-elasticstack/internal/elasticsearch/index/templateilmattachment"
 	"github.com/elastic/terraform-provider-elasticstack/internal/elasticsearch/inference/inferenceendpoint"
+	"github.com/elastic/terraform-provider-elasticstack/internal/elasticsearch/ingest"
 	"github.com/elastic/terraform-provider-elasticstack/internal/elasticsearch/ml/anomalydetectionjob"
 	"github.com/elastic/terraform-provider-elasticstack/internal/elasticsearch/ml/datafeed"
 	"github.com/elastic/terraform-provider-elasticstack/internal/elasticsearch/ml/datafeed_state"
@@ -55,6 +56,7 @@ import (
 	"github.com/elastic/terraform-provider-elasticstack/internal/fleet/integrationds"
 	"github.com/elastic/terraform-provider-elasticstack/internal/fleet/output"
 	"github.com/elastic/terraform-provider-elasticstack/internal/fleet/outputds"
+	"github.com/elastic/terraform-provider-elasticstack/internal/fleet/proxy"
 	"github.com/elastic/terraform-provider-elasticstack/internal/fleet/serverhost"
 	"github.com/elastic/terraform-provider-elasticstack/internal/kibana/agentbuilderagent"
 	"github.com/elastic/terraform-provider-elasticstack/internal/kibana/agentbuildertool"
@@ -190,6 +192,7 @@ func (p *Provider) resources(_ context.Context) []func() resource.Resource {
 		output.NewResource,
 		agentdownloadsource.NewResource,
 		serverhost.NewResource,
+		proxy.NewResource,
 		systemuser.NewSystemUserResource,
 		securityuser.NewUserResource,
 		role.NewRoleResource,
@@ -239,6 +242,46 @@ func (p *Provider) dataSources(_ context.Context) []func() datasource.DataSource
 		enrich.NewEnrichPolicyDataSource,
 		rolemapping.NewRoleMappingDataSource,
 		outputds.NewDataSource,
+		ingest.NewProcessorAppendDataSource,
+		ingest.NewProcessorBytesDataSource,
+		ingest.NewProcessorCircleDataSource,
+		ingest.NewProcessorCommunityIDDataSource,
+		ingest.NewProcessorConvertDataSource,
+		ingest.NewProcessorCSVDataSource,
+		ingest.NewProcessorDateDataSource,
+		ingest.NewProcessorDateIndexNameDataSource,
+		ingest.NewProcessorDissectDataSource,
+		ingest.NewProcessorDotExpanderDataSource,
+		ingest.NewProcessorDropDataSource,
+		ingest.NewProcessorEnrichDataSource,
+		ingest.NewProcessorFailDataSource,
+		ingest.NewProcessorFingerprintDataSource,
+		ingest.NewProcessorForeachDataSource,
+		ingest.NewProcessorGeoIPDataSource,
+		ingest.NewProcessorGrokDataSource,
+		ingest.NewProcessorGsubDataSource,
+		ingest.NewProcessorHTMLStripDataSource,
+		ingest.NewProcessorInferenceDataSource,
+		ingest.NewProcessorJoinDataSource,
+		ingest.NewProcessorJSONDataSource,
+		ingest.NewProcessorKVDataSource,
+		ingest.NewProcessorLowercaseDataSource,
+		ingest.NewProcessorNetworkDirectionDataSource,
+		ingest.NewProcessorPipelineDataSource,
+		ingest.NewProcessorRegisteredDomainDataSource,
+		ingest.NewProcessorRemoveDataSource,
+		ingest.NewProcessorRenameDataSource,
+		ingest.NewProcessorRerouteDataSource,
+		ingest.NewProcessorScriptDataSource,
+		ingest.NewProcessorSetDataSource,
+		ingest.NewProcessorSetSecurityUserDataSource,
+		ingest.NewProcessorSortDataSource,
+		ingest.NewProcessorSplitDataSource,
+		ingest.NewProcessorTrimDataSource,
+		ingest.NewProcessorUppercaseDataSource,
+		ingest.NewProcessorURIPartsDataSource,
+		ingest.NewProcessorURLDecodeDataSource,
+		ingest.NewProcessorUserAgentDataSource,
 	}
 }
 
