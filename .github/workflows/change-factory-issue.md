@@ -1597,6 +1597,7 @@ steps:
     run: npm ci
 engine:
   id: claude
+  version: 2.1.126
   model: "llm-gateway/claude-sonnet-4-6"
   env:
     ANTHROPIC_BASE_URL: "https://elastic.litellm-prod.ai/"
