@@ -1,13 +1,8 @@
-# `ci-semantic-refactor-workflow` - bounded semantic refactor issue workflow
-
-Workflow implementation: repository-authored source under `.github/workflows-src/`, derived from `https://github.com/github/gh-aw/blob/main/.github/workflows/semantic-function-refactor.md`, and compiled to `.github/workflows/`.
+# ci-semantic-refactor-workflow Specification
 
 ## Purpose
-
-Define requirements for a GitHub Agentic Workflow that analyzes Go source organization, function clustering, and extraction opportunities, then opens bounded, actionable GitHub issues for semantic refactoring follow-up.
-
-## ADDED Requirements
-
+TBD - created by archiving change semantic-refactor-workflow. Update Purpose after archive.
+## Requirements
 ### Requirement: Workflow artifacts and compilation
 The semantic refactor workflow SHALL be authored as a GitHub Agentic Workflow markdown source under `.github/workflows-src/` and SHALL include generated workflow artifacts under `.github/workflows/`, including a compiled `.lock.yml` derived from the authored source. The repository-authored source SHALL identify `https://github.com/github/gh-aw/blob/main/.github/workflows/semantic-function-refactor.md` as its upstream baseline. Contributors SHALL NOT hand-edit the generated workflow artifacts.
 
@@ -31,11 +26,11 @@ The semantic refactor workflow SHALL support scheduled daily execution and manua
 - **THEN** the workflow SHALL start a semantic refactor analysis run subject to the pre-activation gate
 
 ### Requirement: LiteLLM-backed engine configuration
-The semantic refactor workflow SHALL run the agent through the repository's LiteLLM-backed Claude engine configuration, using model `llm-gateway/gpt-5.4`, `ANTHROPIC_BASE_URL` set to the Elastic LiteLLM endpoint, `ANTHROPIC_API_KEY` sourced from `CLAUDE_LITELLM_PROXY_API_KEY`, and a `network.allowed` contract that permits access to `elastic.litellm-prod.ai`.
+The semantic refactor workflow SHALL run the agent through the repository's LiteLLM-backed Claude engine configuration, using model `llm-gateway/gpt-5.5`, `ANTHROPIC_BASE_URL` set to the Elastic LiteLLM endpoint, `ANTHROPIC_API_KEY` sourced from `CLAUDE_LITELLM_PROXY_API_KEY`, and a `network.allowed` contract that permits access to `elastic.litellm-prod.ai`.
 
 #### Scenario: Authored workflow uses LiteLLM engine settings
 - **WHEN** maintainers inspect the authored semantic refactor workflow source
-- **THEN** the engine configuration SHALL specify Claude with model `llm-gateway/gpt-5.4`, the Elastic LiteLLM base URL, a `network.allowed` entry for `elastic.litellm-prod.ai`, and the `CLAUDE_LITELLM_PROXY_API_KEY` secret
+- **THEN** the engine configuration SHALL specify Claude with model `llm-gateway/gpt-5.5`, the Elastic LiteLLM base URL, a `network.allowed` entry for `elastic.litellm-prod.ai`, and the `CLAUDE_LITELLM_PROXY_API_KEY` secret
 
 #### Scenario: Compiled lock preserves LiteLLM execution settings
 - **WHEN** the workflow source is compiled
@@ -95,3 +90,4 @@ Each semantic refactor issue created by the workflow SHALL include a concise sum
 #### Scenario: Issue titles and labels identify the workflow output
 - **WHEN** the workflow creates a semantic refactor issue
 - **THEN** the issue SHALL carry the configured title prefix `[semantic-refactor] ` and the `semantic-refactor` label
+
