@@ -85,9 +85,9 @@ type IndexTemplate struct {
 	DataStream                      *DataStreamSettings `json:"data_stream,omitempty"`
 	IndexPatterns                   []string            `json:"index_patterns"`
 	Meta                            map[string]any      `json:"_meta,omitempty"`
-	Priority                        *int                `json:"priority,omitempty"`
+	Priority                        *int64              `json:"priority,omitempty"`
 	Template                        *Template           `json:"template,omitempty"`
-	Version                         *int                `json:"version,omitempty"`
+	Version                         *int64              `json:"version,omitempty"`
 }
 
 type DataStreamSettings struct {
@@ -116,15 +116,6 @@ type Template struct {
 	DataStreamOptions *DataStreamOptions    `json:"data_stream_options,omitempty"`
 }
 
-type IndexTemplatesResponse struct {
-	IndexTemplates []IndexTemplateResponse `json:"index_templates"`
-}
-
-type IndexTemplateResponse struct {
-	Name          string        `json:"name"`
-	IndexTemplate IndexTemplate `json:"index_template"`
-}
-
 type ComponentTemplate struct {
 	Name     string         `json:"-"`
 	Meta     map[string]any `json:"_meta,omitempty"`
@@ -132,18 +123,9 @@ type ComponentTemplate struct {
 	Version  *int           `json:"version,omitempty"`
 }
 
-type ComponentTemplatesResponse struct {
-	ComponentTemplates []ComponentTemplateResponse `json:"component_templates"`
-}
-
 type ComponentTemplateResponse struct {
 	Name              string            `json:"name"`
 	ComponentTemplate ComponentTemplate `json:"component_template"`
-}
-
-type PolicyDefinition struct {
-	Policy   Policy `json:"policy"`
-	Modified string `json:"modified_date"`
 }
 
 type Policy struct {
@@ -217,25 +199,6 @@ type LifecycleSettings struct {
 type Downsampling struct {
 	After         string `json:"after,omitempty"`
 	FixedInterval string `json:"fixed_interval,omitempty"`
-}
-
-type DataStream struct {
-	Name           string            `json:"name"`
-	TimestampField TimestampField    `json:"timestamp_field"`
-	Indices        []DataStreamIndex `json:"indices"`
-	Generation     uint64            `json:"generation"`
-	Meta           map[string]any    `json:"_meta"`
-	Status         string            `json:"status"`
-	Template       string            `json:"template"`
-	IlmPolicy      string            `json:"ilm_policy"`
-	Hidden         bool              `json:"hidden"`
-	System         bool              `json:"system"`
-	Replicated     bool              `json:"replicated"`
-}
-
-type DataStreamIndex struct {
-	IndexName string `json:"index_name"`
-	IndexUUID string `json:"index_uuid"`
 }
 
 type DataStreamLifecycle struct {

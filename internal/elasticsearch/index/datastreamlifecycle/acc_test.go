@@ -18,16 +18,14 @@
 package datastreamlifecycle_test
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"regexp"
-	"strings"
 	"testing"
 
 	"github.com/elastic/terraform-provider-elasticstack/internal/acctest"
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
+	"github.com/elastic/terraform-provider-elasticstack/internal/clients/elasticsearch"
 	"github.com/elastic/terraform-provider-elasticstack/internal/elasticsearch/index/datastreamlifecycle"
 	"github.com/elastic/terraform-provider-elasticstack/internal/models"
 	"github.com/elastic/terraform-provider-elasticstack/internal/versionutils"
@@ -182,9 +180,12 @@ func TestAccResourceDataStreamLifecycle(t *testing.T) {
 						t.Fatalf("Failed to create testing client: %s", err)
 					}
 
-					typedClient, err := client.GetESTypedClient()
+					skip, err := versionutils.CheckIfVersionIsUnsupported(datastreamlifecycle.MinVersion)()
 					if err != nil {
-						t.Fatalf("Failed to get typed es client: %s", err)
+						t.Fatalf("Failed to check ES version: %s", err)
+					}
+					if skip {
+						return
 					}
 
 					lifecycle := models.LifecycleSettings{
@@ -194,17 +195,9 @@ func TestAccResourceDataStreamLifecycle(t *testing.T) {
 							{After: "20d", FixedInterval: "10d"},
 						},
 					}
-					lifecycleBytes, err := json.Marshal(lifecycle)
-					if err != nil {
-						t.Fatalf("Cannot marshal lifecycle: %s", err)
-					}
-					if _, err = typedClient.Indices.PutDataLifecycle(dsName + "-multiple-two").Raw(bytes.NewReader(lifecycleBytes)).Do(context.Background()); err != nil {
-						// HTTP 400 means the endpoint doesn't exist on this ES version; the step's
-						// SkipFunc handles skipping the assertions. Treat it as a no-op here.
-						if strings.Contains(err.Error(), "status: 400") {
-							return
-						}
-						t.Fatalf("Cannot update lifecycle: %s", err)
+					diags := elasticsearch.PutDataStreamLifecycle(context.Background(), client, dsName+"-multiple-two", "", lifecycle)
+					if diags.HasError() {
+						t.Fatalf("Cannot update lifecycle: %s", diags)
 					}
 				},
 				ConfigDirectory: acctest.NamedTestCaseDirectory("update"),
@@ -290,28 +283,31 @@ func checkResourceDataStreamLifecycleDestroy(s *terraform.State) error {
 		return err
 	}
 
+	skip, err := versionutils.CheckIfVersionIsUnsupported(datastreamlifecycle.MinVersion)()
+	if err != nil {
+		return err
+	}
+	if skip {
+		return nil
+	}
+
 	for _, rs := range s.RootModule().Resources {
 		if rs.Type != "elasticstack_elasticsearch_data_stream_lifecycle" {
 			continue
 		}
 		compID, _ := clients.CompositeIDFromStr(rs.Primary.ID)
 
-		typedClient, err := client.GetESTypedClient()
-		if err != nil {
-			return err
+		res, diags := elasticsearch.GetDataStreamLifecycle(context.Background(), client, compID.ResourceID, "")
+		if diags.HasError() {
+			return fmt.Errorf("failed to get data stream lifecycle: %v", diags)
 		}
 
-		resp, err := typedClient.Indices.GetDataLifecycle(compID.ResourceID).Do(context.Background())
-		if err != nil {
-			// for lifecycle without wildcard 404 is returned when no ds matches
-			if acctest.IsNotFoundElasticsearchError(err) {
-				continue
-			}
-			return err
+		// for lifecycle with wildcard empty array is returned; nil means 404 (not found)
+		if res == nil || len(res.DataStreams) == 0 {
+			continue
 		}
 
-		// for lifecycle with wildcard empty array is returned
-		if len(resp.DataStreams) > 0 {
+		if len(res.DataStreams) > 0 {
 			return fmt.Errorf("Data Stream Lifecycle (%s) still exists", compID.ResourceID)
 		}
 	}
