@@ -87,7 +87,6 @@ on:
           
 engine:
   id: claude
-  version: 2.1.126
   model: "llm-gateway/gpt-5.4"
   env:
     ANTHROPIC_BASE_URL: "https://elastic.litellm-prod.ai/"
