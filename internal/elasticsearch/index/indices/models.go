@@ -381,6 +381,11 @@ func setSettingsFromAPI(ctx context.Context, model *indexTfModel, apiModel estyp
 				settingsValue = int64(settingInt)
 			}
 
+			// json.Unmarshal stores numbers as float64 in map[string]any
+			if settingFloat, ok := settingsValue.(float64); ok {
+				settingsValue = int64(settingFloat)
+			}
+
 			settingInt, ok := settingsValue.(int64)
 			if !ok {
 				return diag.Diagnostics{
@@ -472,6 +477,8 @@ func setSettingsFromAPI(ctx context.Context, model *indexTfModel, apiModel estyp
 		}
 
 		model.SettingsRaw = jsontypes.NewNormalizedValue(string(settingsBytes))
+	} else {
+		model.SettingsRaw = jsontypes.NewNormalizedNull()
 	}
 
 	return nil
