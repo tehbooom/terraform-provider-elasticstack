@@ -85,6 +85,9 @@ on:
           
           core.info(`Gate reason: ${result.gate_reason}`);
           
+checkout:
+  fetch-depth: 0
+
 permissions:
   contents: read
   issues: read

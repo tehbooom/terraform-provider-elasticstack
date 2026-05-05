@@ -16,6 +16,9 @@ on:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         x-script-include: scripts/compute_issue_slots.inline.js
 
+checkout:
+  fetch-depth: 0
+
 permissions:
   contents: read
   issues: read
