@@ -89,8 +89,4 @@ The system SHALL define a type constraint `ElasticsearchResourceModel` requiring
 
 ## REMOVED Requirements
 
-### Requirement: Envelope does not implement Create, Update, or ImportState
-
-**Reason**: The envelope now owns Create and Update for resources that fit the standard Elasticsearch lifecycle. Keeping this requirement would contradict the new complete-resource contract.
-
-**Migration**: ImportState remains opt-in under `Envelope keeps ImportState opt-in`. Concrete resources that previously supplied thin Create and Update wrappers SHALL migrate to create and update callbacks passed to `NewElasticsearchResource`.
+_None — the previously removed requirement ("Envelope does not implement Create, Update, or ImportState") was already applied to the canonical spec before archive._

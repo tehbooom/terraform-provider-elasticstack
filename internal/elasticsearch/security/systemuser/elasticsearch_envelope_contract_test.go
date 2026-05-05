@@ -15,15 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
-package script
+package systemuser
 
 import (
-	"context"
+	"testing"
 
-	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/elastic/terraform-provider-elasticstack/internal/entitycore"
 )
 
-func (r *scriptResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	diags := r.update(ctx, req.Plan, &resp.State)
-	resp.Diagnostics.Append(diags...)
+func TestData_satisfiesElasticsearchResourceModelContract(t *testing.T) {
+	t.Parallel()
+	var _ entitycore.ElasticsearchResourceModel = Data{}
 }
