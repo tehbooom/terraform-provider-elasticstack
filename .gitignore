@@ -52,3 +52,4 @@ analysis/lint-perf-output/
 
 # Local env file (template is .env.template)
 .env
+coverage.out
