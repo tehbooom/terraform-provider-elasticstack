@@ -217,7 +217,7 @@ steps:
     uses: actions/download-artifact@v4
     with:
       name: research-factory-issue-context
-      path: /tmp/agent
+      path: /tmp/gh-aw/agent/
   - name: Setup Node.js
     uses: actions/setup-node@v6
     with:
@@ -283,8 +283,8 @@ only durable output is a single update to the issue body via the `update_issue` 
 - **Intake mode**: `${{ needs.pre_activation.outputs.intake_mode }}`
 - **Issue number**: `${{ needs.pre_activation.outputs.issue_number }}`
 - **Issue title**: `${{ needs.pre_activation.outputs.issue_title }}`
-- **Issue body**: see `/tmp/agent/issue_body.md`
-- **Comment history**: see `/tmp/agent/issue_comments.md`
+- **Issue body**: see `/tmp/gh-aw/agent/issue_body.md`
+- **Comment history**: see `/tmp/gh-aw/agent/issue_comments.md`
 
 Read both files before proceeding. They may contain markdown, code fences, and other content that
 cannot be safely embedded inline in a prompt.
