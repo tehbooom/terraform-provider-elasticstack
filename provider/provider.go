@@ -52,11 +52,10 @@ func New(version string) *schema.Provider {
 			"elasticstack_kibana_security_role":    kibana.DataSourceRole(),
 		},
 		ResourcesMap: map[string]*schema.Resource{
-			"elasticstack_elasticsearch_cluster_settings":    cluster.ResourceSettings(),
-			"elasticstack_elasticsearch_snapshot_lifecycle":  cluster.ResourceSlm(),
-			"elasticstack_elasticsearch_snapshot_repository": cluster.ResourceSnapshotRepository(),
-			"elasticstack_kibana_space":                      kibana.ResourceSpace(),
-			"elasticstack_kibana_security_role":              kibana.ResourceRole(),
+			"elasticstack_elasticsearch_cluster_settings": cluster.ResourceSettings(),
+
+			"elasticstack_kibana_space":         kibana.ResourceSpace(),
+			"elasticstack_kibana_security_role": kibana.ResourceRole(),
 		},
 	}
 
