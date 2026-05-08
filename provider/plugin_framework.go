@@ -28,6 +28,7 @@ import (
 	"github.com/elastic/terraform-provider-elasticstack/internal/elasticsearch/cluster"
 	clusterinfo "github.com/elastic/terraform-provider-elasticstack/internal/elasticsearch/cluster/info"
 	"github.com/elastic/terraform-provider-elasticstack/internal/elasticsearch/cluster/script"
+	"github.com/elastic/terraform-provider-elasticstack/internal/elasticsearch/cluster/settings"
 	"github.com/elastic/terraform-provider-elasticstack/internal/elasticsearch/cluster/slm"
 	snapshot_repository "github.com/elastic/terraform-provider-elasticstack/internal/elasticsearch/cluster/snapshot_repository"
 	"github.com/elastic/terraform-provider-elasticstack/internal/elasticsearch/enrich"
@@ -209,6 +210,7 @@ func (p *Provider) resources(_ context.Context) []func() resource.Resource {
 		role.NewRoleResource,
 		inferenceendpoint.NewInferenceEndpointResource,
 		watch.NewWatchResource,
+		settings.NewClusterSettingsResource,
 		script.NewScriptResource,
 		logstash.NewLogstashPipelineResource,
 		maintenancewindow.NewResource,
