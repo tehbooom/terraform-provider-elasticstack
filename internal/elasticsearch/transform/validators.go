@@ -17,13 +17,10 @@
 
 package transform
 
-import _ "embed"
+import (
+	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/types"
+)
 
-//go:embed transform.md
-var transformDescription string
-
-//go:embed descriptions/defer_validation.md
-var deferValidationDescription string
-
-//go:embed descriptions/timeout.md
-var timeoutDescription string
+// stringAttributeType is the element type for string list attributes.
+var stringAttributeType attr.Type = types.StringType
