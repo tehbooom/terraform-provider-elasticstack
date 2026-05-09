@@ -2023,10 +2023,17 @@ Implement the triggering issue on branch `code-factory/issue-${{ needs.pre_activ
 
 1. Read the issue title and body carefully and treat them as authoritative.
 2. Create or update the implementation on branch `code-factory/issue-${{ needs.pre_activation.outputs.issue_number }}`.
-3. Verify your changes with `make build` and by ensuring targeted acceptance tests pass.
+3. Verify your changes according to the "## Verification tasks" section.
 4. Open exactly one pull request for that branch using the `create-pull-request` safe output.
 5. Preserve canonical issue linkage metadata for deterministic reruns by including `Closes #${{ needs.pre_activation.outputs.issue_number }}` in the PR body - this is the stable identifier that prevents duplicate PR creation on future workflow runs.
 6. Keep the pull request labeled `code-factory`.
+
+## Verification tasks
+
+- `make check-lint` must succeed.
+- `make build` must succeed.
+- Unit tests must pass with `go test -v ./...`.
+- Targeted acceptance tests must pass with `ELASTICSEARCH_ENDPOINTS=http://host.docker.internal:9200 ELASTICSEARCH_USERNAME=elastic ELASTICSEARCH_PASSWORD=password KIBANA_ENDPOINT=http://host.docker.internal:5601 TF_ACC=1 go test -v -run TestAccResourceName ./path/to/package`.
 
 ## Pull request contract
 
