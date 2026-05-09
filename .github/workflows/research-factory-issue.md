@@ -2176,6 +2176,12 @@ checkout:
 safe-outputs:
   scripts:
     update-research-comment:
+      description: Create or update the implementation-research sticky comment on the triggering issue
+      inputs:
+        body:
+          description: Markdown body of the research comment (without the gha-research-factory marker)
+          required: true
+          type: string
       script: |
         const { owner, repo } = context.repo;
         const issueNumber = parseInt(process.env.RESEARCH_FACTORY_ISSUE_NUMBER, 10);

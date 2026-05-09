@@ -294,6 +294,12 @@ checkout:
 safe-outputs:
   scripts:
     update-research-comment:
+      description: Create or update the implementation-research sticky comment on the triggering issue
+      inputs:
+        body:
+          description: Markdown body of the research comment (without the gha-research-factory marker)
+          required: true
+          type: string
       script: |
         //include: scripts/update_research_comment.inline.js
   noop:
