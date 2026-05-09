@@ -2186,16 +2186,21 @@ safe-outputs:
           return;
         }
         
-        const body = item.body || '';
+        let body = item.body || '';
         
         if (!issueNumber || issueNumber <= 0) {
           core.setFailed('update-research-comment: invalid issue number.');
           return;
         }
         
-        if (!(body.startsWith(marker + '\n') || body.startsWith(marker + '\r\n'))) {
-          core.setFailed(`update-research-comment: body must start with the marker ${marker} on its own line`);
-          return;
+        // Prepend the marker automatically; the agent does not need to supply it.
+        if (body.startsWith(marker + '\n') || body.startsWith(marker + '\r\n')) {
+          // body already starts with marker; leave as-is
+        } else if (body.startsWith(marker)) {
+          // marker without newline; normalize
+          body = marker + '\n' + body.slice(marker.length);
+        } else {
+          body = marker + '\n' + body;
         }
         
         // Find existing research comment by github-actions[bot]
@@ -2301,8 +2306,8 @@ approach needs its own `#### ` H4 heading. Do not emit a comment with only one a
 ## Research comment format
 
 Your research output MUST conform to the `ci-research-factory-comment-format` capability. The
-comment body SHALL begin with exactly the marker `<!-- gha-research-factory -->` on its own line,
-followed by these mandatory sections in order:
+workflow automatically prepends the marker `<!-- gha-research-factory -->`; you do not need to
+include it. Your comment body SHALL contain these mandatory sections in order:
 
 1. `## Implementation research` — H2 heading followed by a provenance header recording the run
 timestamp, the run link (`${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`), and

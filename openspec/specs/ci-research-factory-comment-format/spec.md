@@ -6,7 +6,7 @@ Define the format of the implementation-research output produced by the `researc
 ## Requirements
 
 ### Requirement: Comment is authored by github-actions[bot] and identified by a marker
-The implementation-research output SHALL be a single issue comment authored by `github-actions[bot]`. The comment body SHALL begin with exactly the marker `<!-- gha-research-factory -->` on its own line. The marker serves as a filter key for downstream consumers (e.g., `change-factory`) to locate the research comment among other bot comments on the issue. There SHALL be at most one such research comment per issue. If multiple comments matching both the `github-actions[bot]` author and the `<!-- gha-research-factory -->` marker are found, the producer SHALL update the most recently created matching comment and SHALL NOT create an additional one.
+The implementation-research output SHALL be a single issue comment authored by `github-actions[bot]`. The producer SHALL prepend exactly the marker `<!-- gha-research-factory -->` on its own line to the comment body before creating or updating the comment. The marker serves as a filter key for downstream consumers (e.g., `change-factory`) to locate the research comment among other bot comments on the issue. There SHALL be at most one such research comment per issue. If multiple comments matching both the `github-actions[bot]` author and the `<!-- gha-research-factory -->` marker are found, the producer SHALL update the most recently created matching comment and SHALL NOT create an additional one.
 
 #### Scenario: Research comment is created on a fresh issue
 - **WHEN** the `research-factory` workflow runs for an issue with no prior research comment

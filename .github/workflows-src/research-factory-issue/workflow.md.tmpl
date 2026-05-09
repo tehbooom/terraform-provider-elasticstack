@@ -352,8 +352,8 @@ approach needs its own `#### ` H4 heading. Do not emit a comment with only one a
 ## Research comment format
 
 Your research output MUST conform to the `ci-research-factory-comment-format` capability. The
-comment body SHALL begin with exactly the marker `<!-- gha-research-factory -->` on its own line,
-followed by these mandatory sections in order:
+workflow automatically prepends the marker `<!-- gha-research-factory -->`; you do not need to
+include it. Your comment body SHALL contain these mandatory sections in order:
 
 1. `## Implementation research` — H2 heading followed by a provenance header recording the run
 timestamp, the run link (`${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`), and

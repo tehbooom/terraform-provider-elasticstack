@@ -385,18 +385,19 @@ test('update_research_comment: happy path updates existing comment', async () =>
   assert.ok(core.logs.some((l) => l.includes('Updated research comment 10')));
 });
 
-test('update_research_comment: missing marker fails', async () => {
+test('update_research_comment: missing marker is prepended automatically', async () => {
   const body = 'Missing marker content';
 
-  const { core } = await runInlineScript('update_research_comment.inline.js', {
+  const { core, github } = await runInlineScript('update_research_comment.inline.js', {
     context: { repo: { owner: 'elastic', repo: 'terraform-provider-elasticstack' } },
-    github: createMockGithubForUpdate(),
+    github: createMockGithubForUpdate({ existingComments: [] }),
     core: createMockCore(),
     env: { RESEARCH_FACTORY_ISSUE_NUMBER: '42' },
     item: { body },
   });
 
-  assert.ok(core.failures.some((f) => f.includes('body must start with the marker')));
+  assert.equal(core.failures.length, 0);
+  assert.ok(core.logs.some((l) => l.includes('Created research comment')));
 });
 
 test('update_research_comment: invalid issue number fails', async () => {

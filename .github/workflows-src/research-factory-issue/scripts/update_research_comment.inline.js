@@ -7,16 +7,21 @@ if (!item) {
   return;
 }
 
-const body = item.body || '';
+let body = item.body || '';
 
 if (!issueNumber || issueNumber <= 0) {
   core.setFailed('update-research-comment: invalid issue number.');
   return;
 }
 
-if (!(body.startsWith(marker + '\n') || body.startsWith(marker + '\r\n'))) {
-  core.setFailed(`update-research-comment: body must start with the marker ${marker} on its own line`);
-  return;
+// Prepend the marker automatically; the agent does not need to supply it.
+if (body.startsWith(marker + '\n') || body.startsWith(marker + '\r\n')) {
+  // body already starts with marker; leave as-is
+} else if (body.startsWith(marker)) {
+  // marker without newline; normalize
+  body = marker + '\n' + body.slice(marker.length);
+} else {
+  body = marker + '\n' + body;
 }
 
 // Find existing research comment by github-actions[bot]
