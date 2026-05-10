@@ -292,16 +292,28 @@ mcp-servers:
 checkout:
   fetch-depth: 0
 safe-outputs:
-  scripts:
+  jobs:
     update-research-comment:
       description: Create or update the implementation-research sticky comment on the triggering issue
+      permissions:
+        contents: read
+        issues: write
+      runs-on: ubuntu-latest
+      output: "Research comment created or updated successfully."
       inputs:
         body:
           description: Markdown body of the research comment (without the gha-research-factory marker)
           required: true
           type: string
-      script: |
-        //include: scripts/update_research_comment.inline.js
+      steps:
+        - name: Create or update research comment
+          uses: actions/github-script@v9
+          env:
+            RESEARCH_FACTORY_ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
+          with:
+            github-token: ${{ secrets.GITHUB_TOKEN }}
+            script: |
+              //include: scripts/update_research_comment.job.js
   noop:
     max: 1
     report-as-issue: false
