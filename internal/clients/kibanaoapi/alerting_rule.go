@@ -290,7 +290,7 @@ func ConvertResponseToModel(spaceID string, resp any) (*models.AlertingRule, dia
 	actions := []models.AlertingRuleAction{}
 	for _, action := range intermediate.Actions {
 		a := models.AlertingRuleAction{
-			Group:  valueOrDefault(action.Group, "default"),
+			Group:  typeutils.DerefOrElse(action.Group, "default"),
 			ID:     action.ID,
 			Params: action.Params,
 		}
@@ -628,11 +628,4 @@ func applyOptionalRuleFields(fields ruleBodyOptionalFields, target any) error {
 		return fmt.Errorf("unmarshal optional fields: %w", err)
 	}
 	return nil
-}
-
-func valueOrDefault(val *string, def string) string {
-	if val != nil && *val != "" {
-		return *val
-	}
-	return def
 }
