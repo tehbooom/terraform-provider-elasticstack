@@ -1,6 +1,8 @@
-pre-start = "make setup"
+[[pre-start]]
+setup = "make setup"
 
-post-start = """set -e
+[[pre-start]]
+env = """set -e
 cp -n .env.template .env
 PORT={{ 10000 + (branch | hash_port) % 5000 }}
 KB_PORT={{ 15000 + ((branch ~ '-kb') | hash_port) % 5000 }}
