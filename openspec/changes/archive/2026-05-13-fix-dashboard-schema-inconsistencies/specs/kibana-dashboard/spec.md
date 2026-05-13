@@ -76,9 +76,9 @@ When the panel is in ES|QL mode, the resource SHALL expose typed nested schemas 
 
 ### Requirement: Heatmap panel behavior (REQ-018)
 
-For heatmap `vis` panels, the resource SHALL require `data_source_json`, `axis`, `styling.cells`, `legend`, and `metric_json`. **`legend.visibility` SHALL use the string values `visible` or `hidden`,** matching the API enum. It SHALL treat the panel as non-ES|QL when a real `query` is present, and in that mode `query` SHALL be required. It SHALL treat the panel as ES|QL when `query` is omitted or empty by the implementation's mode test. Heatmap metric normalization SHALL use the same metric-default behavior shared with the tagcloud implementation.
+For heatmap `vis` panels, the resource SHALL require `data_source_json`, `axis`, `styling.cells`, `legend`, `metric_json`, and `x_axis_json` (with optional `y_axis_json`). **`legend.visibility` SHALL use the string values `visible` or `hidden`,** matching the API enum. It SHALL treat the panel as non-ES|QL when a real `query` is present, and in that mode `query` SHALL be required. It SHALL treat the panel as ES|QL when `query` is omitted or empty by the implementation's mode test. Heatmap metric normalization SHALL use the same metric-default behavior shared with the tagcloud implementation.
 
-The resource SHALL map the API `x` and `y` breakdown dimension fields through the typed `axis` block and the model-layer converter. **`x_axis_json` and `y_axis_json` SHALL NOT be exposed as Terraform attributes.** The model layer SHALL read the API `x` and `y` breakdown JSON and, when needed, map them through internal representation rather than exposing raw JSON fields to practitioners.
+The resource SHALL retain `x_axis_json` and `y_axis_json` as raw JSON attributes for the X and Y breakdown dimensions; this change does not remove them in favor of the typed `axis` block. The typed `axis` block continues to represent visual axis configuration (labels, title, orientation), while `x_axis_json` / `y_axis_json` carry the breakdown operation JSON (e.g. `terms`, `date_histogram`).
 
 #### Scenario: Non-ES|QL heatmap requires query
 
@@ -91,12 +91,6 @@ The resource SHALL map the API `x` and `y` breakdown dimension fields through th
 - GIVEN `heatmap_config.legend.visibility = "hidden"`
 - WHEN the provider builds the API request
 - THEN it SHALL set API heatmap legend visibility to the `hidden` enum value
-
-#### Scenario: Heatmap axis block replaces x_axis_json and y_axis_json
-
-- GIVEN a heatmap panel configured with the typed `axis` block
-- WHEN the provider builds the API request and reads the panel back
-- THEN the panel SHALL convert to and from the API `x` and `y` breakdown dimensions without requiring raw `x_axis_json` or `y_axis_json` attributes in Terraform configuration
 
 ### Requirement: Waffle panel behavior (REQ-019)
 
@@ -298,9 +292,9 @@ The filter structure used by `synthetics_monitors_config` (lists of `{ label, va
 
 For tagcloud `vis` panels, the resource SHALL support both non-ES|QL and ES|QL modes.
 
-In **non-ES|QL mode** (when `query` is present), the resource SHALL require `data_source_json`, `query`, `metric_json`, and `tag_by_json`, with optional `filters`, `ignore_global_filters`, `sampling`, `orientation`, and `font_size`. For semantic equality it SHALL normalize tagcloud metric defaults and the `terms`-operation defaults for `tag_by_json`, including the default `rank_by` value.
+Non-ES|QL mode requires a `query` block with non-null `expression` and `language`; in that mode the resource SHALL require `data_source_json`, `query`, `metric_json`, and `tag_by_json`, with optional `filters`, `ignore_global_filters`, `sampling`, `orientation`, and `font_size`. For semantic equality it SHALL normalize tagcloud metric defaults and the `terms`-operation defaults for `tag_by_json`, including the default `rank_by` value.
 
-In **ES|QL mode** (when `query` is absent or empty), the resource SHALL require `data_source_json` and typed `esql_metric` and `esql_tag_by` blocks instead of `metric_json` and `tag_by_json`. The `query` attribute SHALL be Optional on the schema so that ES|QL configurations are valid. The `esql_metric` block SHALL contain required `column` (string) and `format_json` (normalized JSON for the format type), and optional `label` (string). The `esql_tag_by` block SHALL contain required `column` (string), `format_json` (normalized JSON), and `color_json` (normalized JSON for the color mapping), and optional `label` (string).
+ES|QL mode is selected when `query` is omitted or both `expression` and `language` are null; in ES|QL mode the resource SHALL require `data_source_json` and typed `esql_metric` and `esql_tag_by` blocks instead of `metric_json` and `tag_by_json`. The `query` attribute SHALL be Optional on the schema so that ES|QL configurations are valid. The `esql_metric` block SHALL contain required `column` (string) and `format_json` (normalized JSON for the format type), and optional `label` (string). The `esql_tag_by` block SHALL contain required `column` (string), `format_json` (normalized JSON), and `color_json` (normalized JSON for the color mapping), and optional `label` (string).
 
 #### Scenario: Tagcloud terms defaults
 
@@ -310,7 +304,7 @@ In **ES|QL mode** (when `query` is absent or empty), the resource SHALL require 
 
 #### Scenario: Tagcloud ES|QL round-trip
 
-- GIVEN a tagcloud panel in ES|QL mode with `esql_metric.column = "count"` and `esql_tag_by.column = "host.name"`
+- GIVEN a tagcloud panel in ES|QL mode with `esql_metric.column = "count"` and `esql_tag_by.column = "host"`
 - WHEN create runs and the post-apply read returns the same panel
 - THEN state SHALL contain the typed `esql_metric` and `esql_tag_by` blocks and `metric_json`/`tag_by_json` SHALL be null
 
@@ -318,9 +312,9 @@ In **ES|QL mode** (when `query` is absent or empty), the resource SHALL require 
 
 For gauge `vis` panels, the resource SHALL support both non-ES|QL and ES|QL modes.
 
-In **non-ES|QL mode** (when `query` is present), the resource SHALL require `data_source_json`, `query`, and `metric_json`, and it MAY accept `shape_json`, `filters`, `ignore_global_filters`, and `sampling`. Gauge metric semantic equality SHALL include the implementation's defaults for `empty_as_null`, `hide_title`, and `ticks`.
+Non-ES|QL mode requires a `query` block with non-null `expression` and `language`; in that mode the resource SHALL require `data_source_json`, `query`, and `metric_json`, and it MAY accept `shape_json`, `filters`, `ignore_global_filters`, and `sampling`. Gauge metric semantic equality SHALL include the implementation's defaults for `empty_as_null`, `hide_title`, and `ticks`.
 
-In **ES|QL mode** (when `query` is absent or empty), the resource SHALL require `data_source_json` and a typed `esql_metric` block instead of `metric_json`. The `query` attribute SHALL be Optional on the schema so that ES|QL configurations are valid. The `esql_metric` block SHALL contain required `column` (string) and `format_json` (normalized JSON for the format type), and optional `label` (string), `color_json` (normalized JSON for the gauge fill color), `subtitle` (string), `goal` (object: required `column` string, optional `label` string), `max` (object: required `column` string, optional `label` string), `min` (object: required `column` string, optional `label` string), `ticks` (object: optional `mode` string, optional `visible` bool), and `title` (object: optional `text` string, optional `visible` bool).
+ES|QL mode is selected when `query` is omitted or both `expression` and `language` are null; in ES|QL mode the resource SHALL require `data_source_json` and a typed `esql_metric` block instead of `metric_json`. The `query` attribute SHALL be Optional on the schema so that ES|QL configurations are valid. The `esql_metric` block SHALL contain required `column` (string) and `format_json` (normalized JSON for the format type), and optional `label` (string), `color_json` (normalized JSON for the gauge fill color), `subtitle` (string), `goal` (object: required `column` string, optional `label` string), `max` (object: required `column` string, optional `label` string), `min` (object: required `column` string, optional `label` string), `ticks` (object: optional `mode` string, optional `visible` bool), and `title` (object: optional `text` string, optional `visible` bool).
 
 #### Scenario: Gauge metric defaults
 

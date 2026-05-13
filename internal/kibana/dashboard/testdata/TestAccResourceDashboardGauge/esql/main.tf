@@ -4,7 +4,7 @@ variable "dashboard_title" {
 
 resource "elasticstack_kibana_dashboard" "test" {
   title       = var.dashboard_title
-  description = "Dashboard with Waffle Panel"
+  description = "Dashboard with Gauge Panel (ES|QL)"
   time_range = {
     from = "now-15m"
     to   = "now"
@@ -27,30 +27,28 @@ resource "elasticstack_kibana_dashboard" "test" {
     }
     vis_config = {
       by_value = {
-        waffle_config = {
-          title       = "Sample Waffle"
-          description = "Test waffle visualization"
+        gauge_config = {
+          title       = "ESQL Gauge"
+          description = "Gauge visualization using ES|QL"
           data_source_json = jsonencode({
-            type          = "data_view_spec"
-            index_pattern = "metrics-*"
-
-            time_field = "@timestamp"
+            type  = "esql"
+            query = "FROM metrics-* | STATS revenue = SUM(value) | LIMIT 1"
           })
-          query = {
-            language   = "kql"
-            expression = ""
+
+          # Omit `query` for ES|QL mode.
+
+          esql_metric = {
+            column      = "revenue"
+            format_json = jsonencode({ type = "number" })
+            label       = "Revenue"
           }
-          legend = {
-            size   = "m"
-            values = ["absolute"]
+
+          styling = {
+            shape_json = jsonencode({
+              type = "circle"
+            })
           }
-          metrics = [
-            {
-              config_json = jsonencode({
-                operation = "count"
-              })
-            }
-          ]
+
           ignore_global_filters = false
           sampling              = 1
         }
