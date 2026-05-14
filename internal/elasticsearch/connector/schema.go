@@ -35,7 +35,7 @@ func (r *Resource) Schema(_ context.Context, _ resource.SchemaRequest, resp *res
 	resp.Schema = schema.Schema{
 		Description: "Manages an Elasticsearch search connector. See https://www.elastic.co/docs/reference/search-connectors",
 		Blocks: map[string]schema.Block{
-			"elasticsearch_connection": providerschema.GetEsFWConnectionBlock(false),
+			"elasticsearch_connection": providerschema.GetEsFWConnectionBlock(),
 		},
 		Attributes: map[string]schema.Attribute{
 			"connector_id": schema.StringAttribute{
@@ -54,10 +54,6 @@ func (r *Resource) Schema(_ context.Context, _ resource.SchemaRequest, resp *res
 			"description": schema.StringAttribute{
 				Description: "A human-readable description of the connector.",
 				Optional:    true,
-				Computed:    true,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-				},
 			},
 			"index_name": schema.StringAttribute{
 				Description: "The name of the Elasticsearch index to sync data into. Can be omitted to create a connector without a target index.",
@@ -75,19 +71,18 @@ func (r *Resource) Schema(_ context.Context, _ resource.SchemaRequest, resp *res
 				},
 			},
 			"configuration": schema.StringAttribute{
-				CustomType:  jsontypes.NormalizedType{},
-				Description: "Connector configuration as a JSON object mapping field names to `{\"value\": ...}` objects. The available fields are defined by the connector's `get_default_configuration()` method — find your service type under `connectors/sources/<service_type>/datasource.py` in the elastic/connectors repository (https://github.com/elastic/connectors).",
-				Optional:    true,
-				Computed:    true,
-				Sensitive:   true,
+				CustomType: jsontypes.NormalizedType{},
+				Description: "Connector configuration JSON object in the same shape as GET `/_connector/{id}` " +
+					"`configuration` (field keys to definition objects with `value`, `label`, `type`, etc.). " +
+					"The provider wraps this for the update API. To pass a raw request body, supply top-level " +
+					"`configuration` or `values` only.",
+				Optional:  true,
+				Computed:  true,
+				Sensitive: true,
 			},
 			"scheduling": schema.SingleNestedAttribute{
 				Description: "Sync scheduling configuration.",
 				Optional:    true,
-				Computed:    true,
-				PlanModifiers: []planmodifier.Object{
-					objectplanmodifier.UseStateForUnknown(),
-				},
 				Attributes: map[string]schema.Attribute{
 					"full": schema.SingleNestedAttribute{
 						Description: "Full sync schedule.",
@@ -152,9 +147,10 @@ func (r *Resource) Schema(_ context.Context, _ resource.SchemaRequest, resp *res
 				},
 			},
 			"api_key_id": schema.StringAttribute{
-				Description: "The ID of the API key used by the connector for authentication. For self-managed connectors this registers which key is associated with the connector. For native connectors (Elastic-managed) this is also used internally.",
-				Optional:    true,
-				Computed:    true,
+				Description: "The ID of the API key used by the connector for authentication. For self-managed " +
+					"connectors this registers which key is associated with the connector.",
+				Optional: true,
+				Computed: true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
 				},
@@ -170,6 +166,9 @@ func (r *Resource) Schema(_ context.Context, _ resource.SchemaRequest, resp *res
 			"status": schema.StringAttribute{
 				Description: "The current status of the connector.",
 				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 		},
 	}

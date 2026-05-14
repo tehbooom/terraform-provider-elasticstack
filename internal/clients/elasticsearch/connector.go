@@ -21,7 +21,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
 	"github.com/elastic/terraform-provider-elasticstack/internal/diagutil"
@@ -67,7 +69,7 @@ type ConnectorPipeline struct {
 
 // PutConnector creates or updates a connector. Returns the connector ID.
 // indexName may be empty string to omit it from the request (connector without a target index).
-func PutConnector(ctx context.Context, apiClient *clients.APIClient, connectorID, name, indexName, serviceType, description string) (string, fwdiags.Diagnostics) {
+func PutConnector(ctx context.Context, apiClient *clients.ElasticsearchScopedClient, connectorID, name, indexName, serviceType, description string) (string, fwdiags.Diagnostics) {
 	var diags fwdiags.Diagnostics
 
 	esClient, err := apiClient.GetESClient()
@@ -120,7 +122,7 @@ func PutConnector(ctx context.Context, apiClient *clients.APIClient, connectorID
 }
 
 // GetConnector fetches a connector by ID. Returns nil if not found.
-func GetConnector(ctx context.Context, apiClient *clients.APIClient, connectorID string) (*ConnectorResponse, fwdiags.Diagnostics) {
+func GetConnector(ctx context.Context, apiClient *clients.ElasticsearchScopedClient, connectorID string) (*ConnectorResponse, fwdiags.Diagnostics) {
 	var diags fwdiags.Diagnostics
 
 	esClient, err := apiClient.GetESClient()
@@ -156,7 +158,7 @@ func GetConnector(ctx context.Context, apiClient *clients.APIClient, connectorID
 }
 
 // DeleteConnector deletes a connector by ID.
-func DeleteConnector(ctx context.Context, apiClient *clients.APIClient, connectorID string) fwdiags.Diagnostics {
+func DeleteConnector(ctx context.Context, apiClient *clients.ElasticsearchScopedClient, connectorID string) fwdiags.Diagnostics {
 	var diags fwdiags.Diagnostics
 
 	esClient, err := apiClient.GetESClient()
@@ -181,8 +183,41 @@ func DeleteConnector(ctx context.Context, apiClient *clients.APIClient, connecto
 	return diagutil.CheckErrorFromFW(res, "Failed to delete connector")
 }
 
+// wrapConnectorUpdateConfigurationBody maps the connector configuration map (same shape as
+// GET /_connector returns under "configuration") to the update API body, which must use
+// top-level keys "configuration" or "values" only.
+func wrapConnectorUpdateConfigurationBody(configJSON string) (string, error) {
+	configJSON = strings.TrimSpace(configJSON)
+	if configJSON == "" {
+		return "", fmt.Errorf("configuration JSON is empty")
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(configJSON), &raw); err != nil {
+		return "", fmt.Errorf("configuration must be a JSON object: %w", err)
+	}
+	if raw == nil {
+		return "", fmt.Errorf("configuration must be a JSON object, not null")
+	}
+
+	if _, ok := raw["configuration"]; ok {
+		return configJSON, nil
+	}
+	if _, ok := raw["values"]; ok {
+		return configJSON, nil
+	}
+
+	wrapped, err := json.Marshal(map[string]json.RawMessage{
+		"configuration": json.RawMessage(configJSON),
+	})
+	if err != nil {
+		return "", err
+	}
+	return string(wrapped), nil
+}
+
 // UpdateConnectorConfiguration updates the connector configuration via raw JSON.
-func UpdateConnectorConfiguration(ctx context.Context, apiClient *clients.APIClient, connectorID string, configJSON string) fwdiags.Diagnostics {
+func UpdateConnectorConfiguration(ctx context.Context, apiClient *clients.ElasticsearchScopedClient, connectorID string, configJSON string) fwdiags.Diagnostics {
 	var diags fwdiags.Diagnostics
 
 	esClient, err := apiClient.GetESClient()
@@ -191,7 +226,13 @@ func UpdateConnectorConfiguration(ctx context.Context, apiClient *clients.APICli
 		return diags
 	}
 
-	res, err := esClient.ConnectorUpdateConfiguration(bytes.NewReader([]byte(configJSON)), connectorID,
+	body, err := wrapConnectorUpdateConfigurationBody(configJSON)
+	if err != nil {
+		diags.AddError("Invalid connector configuration JSON", err.Error())
+		return diags
+	}
+
+	res, err := esClient.ConnectorUpdateConfiguration(bytes.NewReader([]byte(body)), connectorID,
 		esClient.ConnectorUpdateConfiguration.WithContext(ctx),
 	)
 	if err != nil {
@@ -204,7 +245,7 @@ func UpdateConnectorConfiguration(ctx context.Context, apiClient *clients.APICli
 }
 
 // UpdateConnectorScheduling updates the connector scheduling.
-func UpdateConnectorScheduling(ctx context.Context, apiClient *clients.APIClient, connectorID string, scheduling *ConnectorScheduling) fwdiags.Diagnostics {
+func UpdateConnectorScheduling(ctx context.Context, apiClient *clients.ElasticsearchScopedClient, connectorID string, scheduling *ConnectorScheduling) fwdiags.Diagnostics {
 	var diags fwdiags.Diagnostics
 
 	esClient, err := apiClient.GetESClient()
@@ -235,7 +276,7 @@ func UpdateConnectorScheduling(ctx context.Context, apiClient *clients.APIClient
 }
 
 // UpdateConnectorPipeline updates the connector pipeline.
-func UpdateConnectorPipeline(ctx context.Context, apiClient *clients.APIClient, connectorID string, pipeline *ConnectorPipeline) fwdiags.Diagnostics {
+func UpdateConnectorPipeline(ctx context.Context, apiClient *clients.ElasticsearchScopedClient, connectorID string, pipeline *ConnectorPipeline) fwdiags.Diagnostics {
 	var diags fwdiags.Diagnostics
 
 	esClient, err := apiClient.GetESClient()
@@ -266,7 +307,7 @@ func UpdateConnectorPipeline(ctx context.Context, apiClient *clients.APIClient, 
 }
 
 // UpdateConnectorName updates the connector name and description.
-func UpdateConnectorName(ctx context.Context, apiClient *clients.APIClient, connectorID, name, description string) fwdiags.Diagnostics {
+func UpdateConnectorName(ctx context.Context, apiClient *clients.ElasticsearchScopedClient, connectorID, name, description string) fwdiags.Diagnostics {
 	var diags fwdiags.Diagnostics
 
 	esClient, err := apiClient.GetESClient()
@@ -299,7 +340,7 @@ func UpdateConnectorName(ctx context.Context, apiClient *clients.APIClient, conn
 
 // UpdateConnectorAPIKeyID associates an API key with the connector.
 // apiKeySecretID is optional (only needed for native/Elastic-managed connectors).
-func UpdateConnectorAPIKeyID(ctx context.Context, apiClient *clients.APIClient, connectorID, apiKeyID, apiKeySecretID string) fwdiags.Diagnostics {
+func UpdateConnectorAPIKeyID(ctx context.Context, apiClient *clients.ElasticsearchScopedClient, connectorID, apiKeyID, apiKeySecretID string) fwdiags.Diagnostics {
 	var diags fwdiags.Diagnostics
 
 	esClient, err := apiClient.GetESClient()
@@ -333,7 +374,7 @@ func UpdateConnectorAPIKeyID(ctx context.Context, apiClient *clients.APIClient, 
 }
 
 // UpdateConnectorIndexName updates the connector index name.
-func UpdateConnectorIndexName(ctx context.Context, apiClient *clients.APIClient, connectorID, indexName string) fwdiags.Diagnostics {
+func UpdateConnectorIndexName(ctx context.Context, apiClient *clients.ElasticsearchScopedClient, connectorID, indexName string) fwdiags.Diagnostics {
 	var diags fwdiags.Diagnostics
 
 	esClient, err := apiClient.GetESClient()

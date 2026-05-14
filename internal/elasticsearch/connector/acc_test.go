@@ -31,7 +31,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
-
 // TestAccResourceConnector tests basic CRUD: create, update name/description/index_name,
 // verifies connector_id is stable across updates, and import.
 func TestAccResourceConnector(t *testing.T) {
@@ -85,12 +84,12 @@ func TestAccResourceConnector(t *testing.T) {
 				),
 			},
 			{
-				ProtoV6ProviderFactories:            acctest.Providers,
-				ConfigDirectory:                     acctest.NamedTestCaseDirectory("update"),
-				ConfigVariables:                     config.Variables{"connector_name": config.StringVariable(connectorName)},
-				ResourceName:                        "elasticstack_elasticsearch_search_connector.test",
-				ImportState:                         true,
-				ImportStateVerify:                   true,
+				ProtoV6ProviderFactories:             acctest.Providers,
+				ConfigDirectory:                      acctest.NamedTestCaseDirectory("update"),
+				ConfigVariables:                      config.Variables{"connector_name": config.StringVariable(connectorName)},
+				ResourceName:                         "elasticstack_elasticsearch_search_connector.test",
+				ImportState:                          true,
+				ImportStateVerify:                    true,
 				ImportStateVerifyIdentifierAttribute: "connector_id",
 				ImportStateIdFunc: func(s *terraform.State) (string, error) {
 					rs := s.RootModule().Resources["elasticstack_elasticsearch_search_connector.test"]
@@ -378,7 +377,7 @@ func TestAccResourceConnectorDisappears(t *testing.T) {
 					func(s *terraform.State) error {
 						rs := s.RootModule().Resources["elasticstack_elasticsearch_search_connector.test"]
 						connectorID := rs.Primary.Attributes["connector_id"]
-						client, err := clients.NewAcceptanceTestingClient()
+						client, err := clients.NewAcceptanceTestingElasticsearchScopedClient()
 						if err != nil {
 							return err
 						}
@@ -421,12 +420,12 @@ func TestAccResourceConnectorExplicitID(t *testing.T) {
 			},
 			{
 				// Verify connector_id cannot be changed without replace.
-				ProtoV6ProviderFactories:            acctest.Providers,
-				ConfigDirectory:                     acctest.NamedTestCaseDirectory("create"),
-				ConfigVariables:                     config.Variables{"connector_name": config.StringVariable(connectorName), "connector_id": config.StringVariable(connectorID)},
-				ResourceName:                        "elasticstack_elasticsearch_search_connector.test",
-				ImportState:                         true,
-				ImportStateVerify:                   true,
+				ProtoV6ProviderFactories:             acctest.Providers,
+				ConfigDirectory:                      acctest.NamedTestCaseDirectory("create"),
+				ConfigVariables:                      config.Variables{"connector_name": config.StringVariable(connectorName), "connector_id": config.StringVariable(connectorID)},
+				ResourceName:                         "elasticstack_elasticsearch_search_connector.test",
+				ImportState:                          true,
+				ImportStateVerify:                    true,
 				ImportStateVerifyIdentifierAttribute: "connector_id",
 				ImportStateIdFunc: func(s *terraform.State) (string, error) {
 					rs := s.RootModule().Resources["elasticstack_elasticsearch_search_connector.test"]
@@ -493,7 +492,7 @@ func checkRawKeyIDMatches(resourceA, attrA, resourceB, attrB string) resource.Te
 }
 
 func checkResourceConnectorDestroy(s *terraform.State) error {
-	client, err := clients.NewAcceptanceTestingClient()
+	client, err := clients.NewAcceptanceTestingElasticsearchScopedClient()
 	if err != nil {
 		return err
 	}
@@ -513,4 +512,47 @@ func checkResourceConnectorDestroy(s *terraform.State) error {
 		}
 	}
 	return nil
+}
+
+// TestAccResourceConnectorWithConfiguration tests creating and updating the configuration attribute.
+func TestAccResourceConnectorWithConfiguration(t *testing.T) {
+	connectorName := sdkacctest.RandStringFromCharSet(10, sdkacctest.CharSetAlphaNum)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { acctest.PreCheck(t) },
+		CheckDestroy: checkResourceConnectorDestroy,
+		Steps: []resource.TestStep{
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("create"),
+				ConfigVariables: config.Variables{
+					"connector_name": config.StringVariable(connectorName),
+				},
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("elasticstack_elasticsearch_search_connector.test", "name", connectorName),
+					resource.TestCheckResourceAttrSet("elasticstack_elasticsearch_search_connector.test", "configuration"),
+				),
+			},
+			{
+				// Apply again to ensure no perpetual diff
+				ProtoV6ProviderFactories: acctest.Providers,
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("create"),
+				ConfigVariables: config.Variables{
+					"connector_name": config.StringVariable(connectorName),
+				},
+				PlanOnly:           true,
+				ExpectNonEmptyPlan: false,
+			},
+			{
+				ProtoV6ProviderFactories: acctest.Providers,
+				ConfigDirectory:          acctest.NamedTestCaseDirectory("update"),
+				ConfigVariables: config.Variables{
+					"connector_name": config.StringVariable(connectorName),
+				},
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttrSet("elasticstack_elasticsearch_search_connector.test", "configuration"),
+				),
+			},
+		},
+	})
 }

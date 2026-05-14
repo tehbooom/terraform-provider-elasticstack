@@ -24,9 +24,10 @@ import (
 	esclient "github.com/elastic/terraform-provider-elasticstack/internal/clients/elasticsearch"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-func (r *Resource) readFromAPI(ctx context.Context, client *clients.APIClient, model *tfModel) (bool, diag.Diagnostics) {
+func (r *Resource) readFromAPI(ctx context.Context, client *clients.ElasticsearchScopedClient, model *tfModel) (bool, diag.Diagnostics) {
 	connector, diags := esclient.GetConnector(ctx, client, model.ConnectorID.ValueString())
 	if diags.HasError() {
 		return false, diags
@@ -47,11 +48,14 @@ func (r *Resource) Read(ctx context.Context, req resource.ReadRequest, resp *res
 		return
 	}
 
-	client, diags := clients.MaybeNewAPIClientFromFrameworkResource(ctx, state.ElasticsearchConnection, r.client)
+	client, diags := r.Client().GetElasticsearchClient(ctx, state.ElasticsearchConnection)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	cfgPrior := state.Configuration
+	schedPrior := state.Scheduling
 
 	exists, diags := r.readFromAPI(ctx, client, &state)
 	resp.Diagnostics.Append(diags...)
@@ -62,6 +66,20 @@ func (r *Resource) Read(ctx context.Context, req resource.ReadRequest, resp *res
 	if !exists {
 		resp.State.RemoveResource(ctx)
 		return
+	}
+
+	// Keep stored configuration as last known Terraform state: GET may reorder, normalize, or
+	// redact sensitive `value` fields so the body will not match the applied config string.
+	// We merge the prior state with the remote state to restore redacted sensitive values
+	// so that Terraform can detect drift on non-sensitive fields without perpetual diffs.
+	state.Configuration = mergeConnectorConfiguration(cfgPrior, state.Configuration)
+
+	// If prior scheduling was null, and the API returns all schedules as disabled, keep it null
+	// to prevent a perpetual diff on omitted scheduling blocks.
+	if schedPrior.IsNull() && !state.Scheduling.IsNull() {
+		if isSchedulingDisabled(ctx, state.Scheduling) {
+			state.Scheduling = types.ObjectNull(schedulingAttrTypes)
+		}
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)

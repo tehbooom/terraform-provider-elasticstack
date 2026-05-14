@@ -92,6 +92,89 @@ func stripCompositeIDPrefix(id string) string {
 	return id
 }
 
+// applyConnectorConfigurationFromPlan restores the configuration JSON from the plan/state after
+// read: GET may reorder, normalize, or redact sensitive `value` fields so the body will not
+// match the exact string Terraform validated at apply time.
+func applyConnectorConfigurationFromPlan(model *tfModel, configurationFromPlan jsontypes.Normalized) {
+	if !configurationFromPlan.IsNull() && !configurationFromPlan.IsUnknown() {
+		model.Configuration = configurationFromPlan
+	}
+}
+
+// isSchedulingDisabled checks if all schedules in a scheduling object are disabled.
+func isSchedulingDisabled(ctx context.Context, scheduling types.Object) bool {
+	var sched tfScheduling
+	if err := scheduling.As(ctx, &sched, basetypes.ObjectAsOptions{}); err != nil {
+		return false
+	}
+
+	checkDisabled := func(obj types.Object) bool {
+		if obj.IsNull() || obj.IsUnknown() {
+			return true
+		}
+		var s tfSchedule
+		if err := obj.As(ctx, &s, basetypes.ObjectAsOptions{}); err != nil {
+			return false
+		}
+		return !s.Enabled.ValueBool()
+	}
+
+	return checkDisabled(sched.Full) && checkDisabled(sched.Incremental) && checkDisabled(sched.AccessControl)
+}
+
+// mergeConnectorConfiguration takes the prior configuration from state and the new configuration
+// from the API. It restores any redacted sensitive `value` fields from the prior configuration
+// into the new configuration so that Terraform can accurately detect drift on non-sensitive fields
+// without producing perpetual diffs on redacted sensitive fields.
+func mergeConnectorConfiguration(prior, remote jsontypes.Normalized) jsontypes.Normalized {
+	if prior.IsNull() || prior.IsUnknown() || prior.ValueString() == "" {
+		return remote
+	}
+	if remote.IsNull() || remote.IsUnknown() || remote.ValueString() == "" {
+		return prior
+	}
+
+	var priorMap map[string]any
+	if err := json.Unmarshal([]byte(prior.ValueString()), &priorMap); err != nil {
+		return remote // fallback to remote if prior is malformed
+	}
+
+	var remoteMap map[string]any
+	if err := json.Unmarshal([]byte(remote.ValueString()), &remoteMap); err != nil {
+		return remote
+	}
+
+	for key, remoteFieldVal := range remoteMap {
+		remoteField, ok := remoteFieldVal.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		isSensitive := false
+		if s, ok := remoteField["sensitive"]; ok {
+			if b, ok := s.(bool); ok {
+				isSensitive = b
+			}
+		}
+
+		if isSensitive {
+			if priorFieldVal, ok := priorMap[key]; ok {
+				if priorField, ok := priorFieldVal.(map[string]any); ok {
+					if priorValue, hasPriorValue := priorField["value"]; hasPriorValue {
+						remoteField["value"] = priorValue
+					}
+				}
+			}
+		}
+	}
+
+	mergedBytes, err := json.Marshal(remoteMap)
+	if err != nil {
+		return remote
+	}
+	return jsontypes.NewNormalizedValue(string(mergedBytes))
+}
+
 func scheduleToObject(s *esclient.ConnectorSchedule) types.Object {
 	if s == nil {
 		return types.ObjectNull(scheduleAttrTypes)
@@ -103,7 +186,7 @@ func scheduleToObject(s *esclient.ConnectorSchedule) types.Object {
 	return obj
 }
 
-func (m *tfModel) populateFromAPI(ctx context.Context, api *esclient.ConnectorResponse) diag.Diagnostics {
+func (m *tfModel) populateFromAPI(_ context.Context, api *esclient.ConnectorResponse) diag.Diagnostics {
 	var diags diag.Diagnostics
 
 	m.ConnectorID = types.StringValue(api.ID)
@@ -170,33 +253,27 @@ func (m *tfModel) toSchedulingAPI(ctx context.Context) (*esclient.ConnectorSched
 	if !scheduling.Full.IsNull() && !scheduling.Full.IsUnknown() {
 		var full tfSchedule
 		diags.Append(scheduling.Full.As(ctx, &full, basetypes.ObjectAsOptions{})...)
-		if full.Interval.ValueString() != "" {
-			s.Full = &esclient.ConnectorSchedule{
-				Enabled:  full.Enabled.ValueBool(),
-				Interval: full.Interval.ValueString(),
-			}
+		s.Full = &esclient.ConnectorSchedule{
+			Enabled:  full.Enabled.ValueBool(),
+			Interval: full.Interval.ValueString(),
 		}
 	}
 
 	if !scheduling.Incremental.IsNull() && !scheduling.Incremental.IsUnknown() {
 		var incremental tfSchedule
 		diags.Append(scheduling.Incremental.As(ctx, &incremental, basetypes.ObjectAsOptions{})...)
-		if incremental.Interval.ValueString() != "" {
-			s.Incremental = &esclient.ConnectorSchedule{
-				Enabled:  incremental.Enabled.ValueBool(),
-				Interval: incremental.Interval.ValueString(),
-			}
+		s.Incremental = &esclient.ConnectorSchedule{
+			Enabled:  incremental.Enabled.ValueBool(),
+			Interval: incremental.Interval.ValueString(),
 		}
 	}
 
 	if !scheduling.AccessControl.IsNull() && !scheduling.AccessControl.IsUnknown() {
 		var accessControl tfSchedule
 		diags.Append(scheduling.AccessControl.As(ctx, &accessControl, basetypes.ObjectAsOptions{})...)
-		if accessControl.Interval.ValueString() != "" {
-			s.AccessControl = &esclient.ConnectorSchedule{
-				Enabled:  accessControl.Enabled.ValueBool(),
-				Interval: accessControl.Interval.ValueString(),
-			}
+		s.AccessControl = &esclient.ConnectorSchedule{
+			Enabled:  accessControl.Enabled.ValueBool(),
+			Interval: accessControl.Interval.ValueString(),
 		}
 	}
 

@@ -20,9 +20,9 @@ package connector
 import (
 	"context"
 
-	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
 	esclient "github.com/elastic/terraform-provider-elasticstack/internal/clients/elasticsearch"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 func (r *Resource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
@@ -35,7 +35,7 @@ func (r *Resource) Update(ctx context.Context, req resource.UpdateRequest, resp 
 		return
 	}
 
-	client, diags := clients.MaybeNewAPIClientFromFrameworkResource(ctx, plan.ElasticsearchConnection, r.client)
+	client, diags := r.Client().GetElasticsearchClient(ctx, plan.ElasticsearchConnection)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -73,7 +73,17 @@ func (r *Resource) Update(ctx context.Context, req resource.UpdateRequest, resp 
 
 	// Update scheduling if changed
 	if !plan.Scheduling.Equal(state.Scheduling) {
-		if !plan.Scheduling.IsNull() && !plan.Scheduling.IsUnknown() {
+		if plan.Scheduling.IsNull() {
+			emptyScheduling := &esclient.ConnectorScheduling{
+				Full:          &esclient.ConnectorSchedule{Enabled: false, Interval: ""},
+				Incremental:   &esclient.ConnectorSchedule{Enabled: false, Interval: ""},
+				AccessControl: &esclient.ConnectorSchedule{Enabled: false, Interval: ""},
+			}
+			resp.Diagnostics.Append(esclient.UpdateConnectorScheduling(ctx, client, connectorID, emptyScheduling)...)
+			if resp.Diagnostics.HasError() {
+				return
+			}
+		} else if !plan.Scheduling.IsUnknown() {
 			scheduling, diags := plan.toSchedulingAPI(ctx)
 			resp.Diagnostics.Append(diags...)
 			if resp.Diagnostics.HasError() {
@@ -113,6 +123,9 @@ func (r *Resource) Update(ctx context.Context, req resource.UpdateRequest, resp 
 	}
 
 	// Read back to populate computed fields
+	cfgFromPlan := plan.Configuration
+	schedFromPlan := plan.Scheduling
+
 	exists, diags := r.readFromAPI(ctx, client, &plan)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
@@ -123,6 +136,14 @@ func (r *Resource) Update(ctx context.Context, req resource.UpdateRequest, resp 
 		return
 	}
 
+	applyConnectorConfigurationFromPlan(&plan, cfgFromPlan)
+
+	// If scheduling was null in plan, and API returned all schedules as disabled, keep it null
+	if schedFromPlan.IsNull() && !plan.Scheduling.IsNull() {
+		if isSchedulingDisabled(ctx, plan.Scheduling) {
+			plan.Scheduling = types.ObjectNull(schedulingAttrTypes)
+		}
+	}
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
-

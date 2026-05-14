@@ -3,12 +3,12 @@
 page_title: "elasticstack_elasticsearch_search_connector Resource - terraform-provider-elasticstack"
 subcategory: "Search"
 description: |-
-  Manages an Elasticsearch search connector. See https://www.elastic.co/docs/api/doc/elasticsearch/group/endpoint-connector
+  Manages an Elasticsearch search connector. See https://www.elastic.co/docs/reference/search-connectors
 ---
 
 # elasticstack_elasticsearch_search_connector (Resource)
 
-Manages an Elasticsearch search connector. See https://www.elastic.co/docs/api/doc/elasticsearch/group/endpoint-connector
+Manages an Elasticsearch search connector. See https://www.elastic.co/docs/reference/search-connectors
 
 ## Example Usage
 
@@ -88,10 +88,12 @@ resource "elasticstack_elasticsearch_search_connector" "google_drive" {
 
 ### Optional
 
-- `configuration` (String, Sensitive) Connector configuration as a JSON object. The schema varies by service type. The full configuration object including metadata fields (display, label, type, etc.) should be provided.
+- `api_key_id` (String) The ID of the API key used by the connector for authentication. For self-managed connectors this registers which key is associated with the connector.
+- `api_key_secret_id` (String) The secret storage ID of the API key. Required for native/Elastic-managed connectors running inside Elastic Cloud.
+- `configuration` (String, Sensitive) Connector configuration JSON object in the same shape as GET `/_connector/{id}` `configuration` (field keys to definition objects with `value`, `label`, `type`, etc.). The provider wraps this for the update API. To pass a raw request body, supply top-level `configuration` or `values` only.
 - `connector_id` (String) The unique identifier for the connector. If not set, Elasticsearch will generate one.
 - `description` (String) A human-readable description of the connector.
-- `elasticsearch_connection` (Block List, Deprecated) Elasticsearch connection configuration block. (see [below for nested schema](#nestedblock--elasticsearch_connection))
+- `elasticsearch_connection` (Block List) Elasticsearch connection configuration block. (see [below for nested schema](#nestedblock--elasticsearch_connection))
 - `index_name` (String) The name of the Elasticsearch index to sync data into. Can be omitted to create a connector without a target index.
 - `pipeline` (Attributes) Ingest pipeline configuration. (see [below for nested schema](#nestedatt--pipeline))
 - `scheduling` (Attributes) Sync scheduling configuration. (see [below for nested schema](#nestedatt--scheduling))

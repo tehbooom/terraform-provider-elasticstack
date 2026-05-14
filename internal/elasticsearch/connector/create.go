@@ -20,7 +20,6 @@ package connector
 import (
 	"context"
 
-	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
 	esclient "github.com/elastic/terraform-provider-elasticstack/internal/clients/elasticsearch"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -34,7 +33,7 @@ func (r *Resource) Create(ctx context.Context, req resource.CreateRequest, resp 
 		return
 	}
 
-	client, diags := clients.MaybeNewAPIClientFromFrameworkResource(ctx, plan.ElasticsearchConnection, r.client)
+	client, diags := r.Client().GetElasticsearchClient(ctx, plan.ElasticsearchConnection)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -99,6 +98,9 @@ func (r *Resource) Create(ctx context.Context, req resource.CreateRequest, resp 
 	}
 
 	// Read back to populate computed fields
+	cfgFromPlan := plan.Configuration
+	schedFromPlan := plan.Scheduling
+
 	exists, diags := r.readFromAPI(ctx, client, &plan)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
@@ -107,6 +109,15 @@ func (r *Resource) Create(ctx context.Context, req resource.CreateRequest, resp 
 	if !exists {
 		resp.Diagnostics.AddError("Connector not found after creation", "The connector was created but could not be read back")
 		return
+	}
+
+	applyConnectorConfigurationFromPlan(&plan, cfgFromPlan)
+
+	// If scheduling was null in plan, and API returned all schedules as disabled, keep it null
+	if schedFromPlan.IsNull() && !plan.Scheduling.IsNull() {
+		if isSchedulingDisabled(ctx, plan.Scheduling) {
+			plan.Scheduling = types.ObjectNull(schedulingAttrTypes)
+		}
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
