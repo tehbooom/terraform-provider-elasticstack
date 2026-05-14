@@ -887,7 +887,8 @@ resource "elasticstack_fleet_output" "output" {
 - Initial set of docs
 - CI integration
 
-[Unreleased]: https://github.com/elastic/terraform-provider-elasticstack/compare/v0.14.5...HEAD
+[Unreleased]: https://github.com/elastic/terraform-provider-elasticstack/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/elastic/terraform-provider-elasticstack/compare/v0.14.5...v0.15.0
 [0.14.5]: https://github.com/elastic/terraform-provider-elasticstack/compare/v0.14.4...v0.14.5
 [0.14.4]: https://github.com/elastic/terraform-provider-elasticstack/compare/v0.14.3...v0.14.4
 [0.14.3]: https://github.com/elastic/terraform-provider-elasticstack/compare/v0.14.2...v0.14.3
