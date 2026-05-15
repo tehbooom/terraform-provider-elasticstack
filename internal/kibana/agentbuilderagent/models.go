@@ -247,15 +247,17 @@ func (model agentModel) toAPIUpdateModel(ctx context.Context) (kbapi.PutAgentBui
 
 	skillIDs, d := setToStrings(ctx, model.SkillIDs)
 	diags.Append(d...)
+	// Always send skill_ids on update (including empty) so cleared values are
+	// propagated to Kibana. The omitempty tag on the generated struct field
+	// omits the field only when the pointer is nil; a non-nil pointer to an
+	// empty slice serialises as [] and clears the value on the server.
+	if skillIDs == nil {
+		skillIDs = []string{}
+	}
 
 	var instructions *string
 	if !model.Instructions.IsNull() && !model.Instructions.IsUnknown() {
 		instructions = model.Instructions.ValueStringPointer()
-	}
-
-	var skillIDsPtr *[]string
-	if len(skillIDs) > 0 {
-		skillIDsPtr = &skillIDs
 	}
 
 	body.Configuration = &struct {
@@ -271,7 +273,7 @@ func (model agentModel) toAPIUpdateModel(ctx context.Context) (kbapi.PutAgentBui
 	}{
 		Instructions: instructions,
 		Tools:        &tools,
-		SkillIds:     skillIDsPtr,
+		SkillIds:     &skillIDs,
 	}
 
 	labels, d := setToStrings(ctx, model.Labels)
