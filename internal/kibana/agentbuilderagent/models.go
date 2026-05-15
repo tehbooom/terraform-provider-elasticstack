@@ -39,8 +39,9 @@ type agentModel struct {
 	Description      types.String `tfsdk:"description"`
 	AvatarColor      types.String `tfsdk:"avatar_color"`
 	AvatarSymbol     types.String `tfsdk:"avatar_symbol"`
-	Labels           types.Set    `tfsdk:"labels"` // []string
-	Tools            types.Set    `tfsdk:"tools"`  // []string
+	Labels           types.Set    `tfsdk:"labels"`    // []string
+	Tools            types.Set    `tfsdk:"tools"`     // []string
+	SkillIDs         types.Set    `tfsdk:"skill_ids"` // []string
 	Instructions     types.String `tfsdk:"instructions"`
 }
 
@@ -56,6 +57,7 @@ type agentDataSourceModel struct {
 	AvatarSymbol        types.String `tfsdk:"avatar_symbol"`
 	Labels              types.Set    `tfsdk:"labels"`
 	Tools               []toolModel  `tfsdk:"tools"`
+	SkillIDs            types.Set    `tfsdk:"skill_ids"`
 	Instructions        types.String `tfsdk:"instructions"`
 }
 
@@ -123,6 +125,8 @@ func (model *agentDataSourceModel) populateFromAPI(ctx context.Context, spaceID 
 		model.Labels = types.SetNull(types.StringType)
 	}
 
+	diags.Append(populateSet(ctx, data.Configuration.SkillIDs, &model.SkillIDs)...)
+
 	return diags
 }
 
@@ -162,6 +166,7 @@ func (model *agentModel) populateFromAPI(ctx context.Context, spaceID string, da
 		toolIDs = cfg.Tools[0].ToolIDs
 	}
 	diags.Append(populateSet(ctx, toolIDs, &model.Tools)...)
+	diags.Append(populateSet(ctx, cfg.SkillIDs, &model.SkillIDs)...)
 
 	return diags
 }
@@ -201,6 +206,12 @@ func (model agentModel) toAPICreateModel(ctx context.Context) (kbapi.PostAgentBu
 		ToolIds []string `json:"tool_ids"` //nolint:revive
 	}{{ToolIds: toolIDs}}
 
+	skillIDs, d := setToStrings(ctx, model.SkillIDs)
+	diags.Append(d...)
+	if len(skillIDs) > 0 {
+		body.Configuration.SkillIds = &skillIDs
+	}
+
 	labels, d := setToStrings(ctx, model.Labels)
 	diags.Append(d...)
 	if len(labels) > 0 {
@@ -234,9 +245,17 @@ func (model agentModel) toAPIUpdateModel(ctx context.Context) (kbapi.PutAgentBui
 		ToolIds []string `json:"tool_ids"` //nolint:revive
 	}{{ToolIds: toolIDs}}
 
+	skillIDs, d := setToStrings(ctx, model.SkillIDs)
+	diags.Append(d...)
+
 	var instructions *string
 	if !model.Instructions.IsNull() && !model.Instructions.IsUnknown() {
 		instructions = model.Instructions.ValueStringPointer()
+	}
+
+	var skillIDsPtr *[]string
+	if len(skillIDs) > 0 {
+		skillIDsPtr = &skillIDs
 	}
 
 	body.Configuration = &struct {
@@ -252,6 +271,7 @@ func (model agentModel) toAPIUpdateModel(ctx context.Context) (kbapi.PutAgentBui
 	}{
 		Instructions: instructions,
 		Tools:        &tools,
+		SkillIds:     skillIDsPtr,
 	}
 
 	labels, d := setToStrings(ctx, model.Labels)
