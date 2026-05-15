@@ -15,63 +15,58 @@
 // specific language governing permissions and limitations
 // under the License.
 
-package alias
+package settings
 
 import (
 	"context"
+	"maps"
 
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients"
 	"github.com/elastic/terraform-provider-elasticstack/internal/clients/elasticsearch"
 	"github.com/elastic/terraform-provider-elasticstack/internal/diagutil"
 	"github.com/elastic/terraform-provider-elasticstack/internal/entitycore"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
+	fwdiag "github.com/hashicorp/terraform-plugin-framework/diag"
 )
 
-func createAlias(ctx context.Context, client *clients.ElasticsearchScopedClient, req entitycore.WriteRequest[tfModel]) (entitycore.WriteResult[tfModel], diag.Diagnostics) {
-	var diags diag.Diagnostics
+// updateClusterSettings implements the envelope's Update callback. It diffs
+// the prior and planned settings to PUT both new values and explicit nulls for
+// removed keys, then carries the composite ID forward from the prior state.
+func updateClusterSettings(ctx context.Context, client *clients.ElasticsearchScopedClient, req entitycore.WriteRequest[tfModel]) (entitycore.WriteResult[tfModel], fwdiag.Diagnostics) {
+	var diags fwdiag.Diagnostics
 	plan := req.Plan
-	aliasName := req.WriteID
+	prior := *req.Prior
 
-	diags.Append(plan.Validate(ctx)...)
+	oldSettings, g := getConfiguredSettings(ctx, prior)
+	diags.Append(g...)
 	if diags.HasError() {
 		return entitycore.WriteResult[tfModel]{Model: plan}, diags
 	}
 
-	id, sdkDiags := client.ID(ctx, aliasName)
-	if sdkDiags.HasError() {
-		diags.Append(diagutil.FrameworkDiagsFromSDK(sdkDiags)...)
-		return entitycore.WriteResult[tfModel]{Model: plan}, diags
-	}
-	plan.ID = basetypes.NewStringValue(id.String())
-
-	configs, configDiags := plan.toAliasConfigs(ctx)
-	diags.Append(configDiags...)
+	newSettings, g := getConfiguredSettings(ctx, plan)
+	diags.Append(g...)
 	if diags.HasError() {
 		return entitycore.WriteResult[tfModel]{Model: plan}, diags
 	}
 
-	// Convert to alias actions
-	var actions []elasticsearch.AliasAction
-	for _, config := range configs {
-		action := elasticsearch.AliasAction{
-			Type:          "add",
-			Index:         config.Name,
-			Alias:         aliasName,
-			IsWriteIndex:  config.IsWriteIndex,
-			Filter:        config.Filter,
-			IndexRouting:  config.IndexRouting,
-			IsHidden:      config.IsHidden,
-			Routing:       config.Routing,
-			SearchRouting: config.SearchRouting,
+	apiSettings := make(map[string]any)
+	maps.Copy(apiSettings, newSettings)
+	for _, category := range []string{"persistent", "transient"} {
+		oldCat, _ := oldSettings[category].(map[string]any)
+		newCat, _ := newSettings[category].(map[string]any)
+		if oldCat == nil {
+			oldCat = make(map[string]any)
 		}
-		actions = append(actions, action)
+		if newCat == nil {
+			newCat = make(map[string]any)
+		}
+		updateRemovedSettings(category, oldCat, newCat, apiSettings)
 	}
 
-	diags.Append(elasticsearch.UpdateAliasesAtomic(ctx, client, actions)...)
+	diags.Append(diagutil.FrameworkDiagsFromSDK(elasticsearch.PutSettings(ctx, client, apiSettings))...)
 	if diags.HasError() {
 		return entitycore.WriteResult[tfModel]{Model: plan}, diags
 	}
 
+	plan.ID = prior.ID
 	return entitycore.WriteResult[tfModel]{Model: plan}, diags
 }
